@@ -354,6 +354,8 @@ def group_paragraphs(lines: list[Line], layout: PageLayout) -> list[list[Line]]:
                 gi = tail_of.get(id(prev))
                 if gi is None or prev is ln or prev.vertical or prev.rotate != 0:
                     continue
+                if prev.text.rstrip()[-1:] in ("：", ":"):
+                    continue  # a form label ("版本号：") never runs on
                 size = max(prev.size, ln.size)
                 gap = ln.bbox[1] - prev.bbox[3]
                 if not (-0.2 * size <= gap <= 0.7 * size):
