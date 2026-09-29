@@ -246,7 +246,9 @@ def _weighted_median(lines: list[Line]) -> float:
 
 class Obstacles:
     def __init__(self, layout: PageLayout, segments: list[Segment], extra: Optional[list[Box]] = None):
-        self.fixed: list[Box] = list(layout.hlines) + list(layout.vlines) + list(layout.pictures) + list(extra or [])
+        self.hlines = list(layout.hlines)
+        self.vlines = list(layout.vlines)
+        self.fixed: list[Box] = self.hlines + self.vlines + list(layout.pictures) + list(extra or [])
         self.segments = segments
         allboxes = self.fixed + [s.bbox for s in segments]
         x0, y0, x1, y1 = layout.rect
@@ -264,6 +266,10 @@ class Obstacles:
             if s is seg:
                 continue
             yield s.bbox, TEXT_PAD, s.translate, True
+
+
+def _inside_pt(p: tuple[float, float], b: Box) -> bool:
+    return b[0] <= p[0] <= b[2] and b[1] <= p[1] <= b[3]
 
 
 def free_container(seg: Segment, obs: Obstacles) -> tuple[Box, dict]:
@@ -292,6 +298,13 @@ def free_container(seg: Segment, obs: Obstacles) -> tuple[Box, dict]:
         bcx = (b[0] + b[2]) / 2
         if is_text and overlaps_self(b) and abs(bcx - cx) < 0.5 * (x1 - x0):
             continue  # overlapping text on the same row: handled vertically
+        if is_text and seg.cell is not None and not _inside_pt(((b[0] + b[2]) / 2, (b[1] + b[3]) / 2), seg.cell):
+            continue  # beyond our cell's edge: the edge is the boundary
+        if is_text and not overlaps_self(b):
+            # a table border between us is the real boundary
+            a_, b_ = (seg.bbox, b) if bcx > cx else (b, seg.bbox)
+            if _line_between_x(a_, b_, obs.vlines):
+                continue
         if b[0] >= x1 - 0.5 or (is_text and bcx > cx and b[0] > x0):
             lim = (x1 + b[0]) / 2 if shared else b[0] - pad
             if lim < right:
@@ -307,6 +320,12 @@ def free_container(seg: Segment, obs: Obstacles) -> tuple[Box, dict]:
         if not (b[0] < right - 0.3 and b[2] > left + 0.3):
             continue
         bcy = (b[1] + b[3]) / 2
+        if is_text and seg.cell is not None and not _inside_pt(((b[0] + b[2]) / 2, bcy), seg.cell):
+            continue
+        if is_text and not overlaps_self(b):
+            a_, b_ = (seg.bbox, b) if bcy > cy else (b, seg.bbox)
+            if _line_between_y(a_, b_, obs.hlines):
+                continue
         if b[1] >= y1 - 0.3 * h or (is_text and bcy > cy and b[1] > y0):
             lim = (y1 + b[1]) / 2 if (shared or is_text and b[1] < y1) else b[1] - pad
             if lim < bottom:
@@ -455,11 +474,14 @@ def build_segments(layout: PageLayout, source_lang: str, translate_all: bool = F
     for i, s in enumerate(segments):
         s.id = f"p{layout.page_no + 1}-{i + 1}"
     obs = Obstacles(layout, segments)
-    finder = CellFinder(layout.image, [s.bbox for s in segments])
+    finder = CellFinder(layout.image, [(l.bbox, l.background) for s in segments for l in s.lines])
+    page_area = box_w(layout.rect) * box_h(layout.rect)
     for seg in segments:
         if not seg.translate:
             continue
-        seg.cell = finder.cell(seg.bbox)
+        cell = finder.cell(seg.bbox)
+        # a "cell" covering most of the page is just open paper
+        seg.cell = cell if cell and box_w(cell) * box_h(cell) < 0.25 * page_area else None
         container, hit = free_container(seg, obs)
         seg.container = container
         seg.align = "center" if seg.vertical else _align(seg.lines, container, seg.cell)

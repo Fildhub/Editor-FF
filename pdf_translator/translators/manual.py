@@ -32,12 +32,16 @@ class FileTranslator(Translator):
     def __init__(self, path: str):
         self.path = path
         self.by_id = load_translations(path)
-        # Also allow lookups by source text (handy when ids shift).
+        # Lookups by source text work even when ids shift after a re-run;
+        # an id match is only trusted when its source text is unchanged.
         self.by_text: dict[str, str] = {}
+        self.source_of: dict[str, str] = {}
         raw = json.loads(Path(path).read_text("utf-8"))
         rows = raw["segments"] if isinstance(raw, dict) and "segments" in raw else raw
         if isinstance(rows, list):
             for row in rows:
+                if row.get("source") is not None:
+                    self.source_of[str(row["id"])] = row["source"]
                 if row.get("translation") is not None and row.get("source"):
                     self.by_text.setdefault(row["source"], row["translation"])
 
@@ -47,7 +51,7 @@ class FileTranslator(Translator):
     def translate(self, items: list[Item], ctx: Context) -> dict[str, str]:
         out = {}
         for it in items:
-            if it.id in self.by_id:
+            if it.id in self.by_id and self.source_of.get(it.id, it.text) == it.text:
                 out[it.id] = self.by_id[it.id]
             elif it.text in self.by_text:
                 out[it.id] = self.by_text[it.text]

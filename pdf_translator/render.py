@@ -76,6 +76,8 @@ def _html(text: str) -> str:
 
 def _css(fonts: FontSet, seg: Segment, size: float) -> str:
     align = {"left": "left", "center": "center", "right": "right", "justify": "justify"}[seg.align]
+    if align == "justify" and seg.translation and "\n" in seg.translation:
+        align = "left"  # explicit line breaks: justified short lines look gappy
     color = _hex(_readable_color(seg.color))
     weight = "bold" if seg.bold else "normal"
     style = "italic" if seg.italic else "normal"
@@ -145,20 +147,35 @@ def fit(fonts: FontSet, seg: Segment, text: str) -> Placement:
         h, w = measure(fonts, seg, text, size, W)
         return (h <= H + 0.01 and w <= W + 0.01), h
 
-    # 1) The original was one line (a label, a cell, a heading): keep the
-    #    translation on one line if that costs at most ~22% of the size.
+    # The original was one line (a label, a cell, a heading): compare the
+    # best one-line size with the best wrapped size, prefer one line unless
+    # wrapping allows a clearly (>12%) bigger font.
+    one: Optional[Placement] = None
     if "\n" not in text and (len(seg.lines) == 1 or rotated):
         natural = fonts.text_width(text, s0, seg.bold) * 1.01 + 0.5
-        one = s0 if natural <= W else s0 * W / natural
-        if one >= 0.78 * s0:
-            good, h = ok(one)
-            while not good and one > 0.78 * s0:
-                one *= 0.97
-                good, h = ok(one)
-            if good and h <= one * LINE_HEIGHT * 1.6:
-                return Placement(seg=seg, rect=area, size=one, scale=one / s0, fits=True, content_h=h)
+        size1 = s0 if natural <= W else s0 * W / natural
+        good, h = ok(size1)
+        tries = 0
+        while not good and tries < 20:
+            size1 *= 0.97
+            good, h = ok(size1)
+            tries += 1
+        if good and h <= size1 * LINE_HEIGHT * 1.6:
+            one = Placement(seg=seg, rect=area, size=size1, scale=size1 / s0, fits=True, content_h=h)
+            if size1 >= 0.97 * s0:
+                return one
+            # a heading / logo line that wraps looks broken: keep it whole
+            if seg.bold and s0 >= 9 and size1 >= 0.45 * s0:
+                return one
 
-    # 2) Wrap into as many lines as the free space allows, shrink if needed.
+    wrapped = _fit_wrapped(ok, s0, area, seg)
+    if one is not None and (not wrapped.fits or one.size * 1.12 >= wrapped.size):
+        return one
+    return wrapped
+
+
+def _fit_wrapped(ok, s0: float, area: Box, seg: Segment) -> Placement:
+    """Largest size at which the text fits when wrapped into the area."""
     good, h = ok(s0)
     size = s0
     if not good:
@@ -198,9 +215,9 @@ def harmonise(placements: list[Placement], fonts: FontSet) -> None:
     groups: dict[tuple, list[Placement]] = {}
     for p in placements:
         s = p.seg
-        if s.rotate:
-            continue
-        key = (s.page, round(s.size, 1), s.bold, round(p.rect[0] / 4), round(p.rect[2] / 4))
+        if s.rotate or s.valign != "middle":
+            continue  # only table cells (text centred between rules)
+        key = (s.page, round(s.size, 1), s.bold, len(s.lines) == 1, round(p.rect[0] / 4), round(p.rect[2] / 4))
         groups.setdefault(key, []).append(p)
     for grp in groups.values():
         if len(grp) < 2:
@@ -334,9 +351,8 @@ def draw(page: pymupdf.Page, p: Placement, fonts: FontSet) -> Box:
     area = p.rect
     W = box_h(area) if rotated else box_w(area)
     H = box_w(area) if rotated else box_h(area)
-    ch = min(p.content_h if p.fits else H, H)
-    # measure again at the final size (harmonise may have changed it)
-    ch, cw = measure(fonts, seg, text, p.size, W)
+    # measure at the final size (harmonise may have changed it)
+    ch, _ = measure(fonts, seg, text, p.size, W)
     ch = min(ch, H)
     if rotated:
         # text runs bottom-to-top, "height" is the horizontal extent
@@ -364,7 +380,3 @@ def draw(page: pymupdf.Page, p: Placement, fonts: FontSet) -> Box:
         p.size *= scale
         p.fits = False
     return tuple(r)
-
-
-def text_extent(rect: Box, seg: Segment) -> Box:
-    return rect

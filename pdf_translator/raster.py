@@ -215,7 +215,8 @@ def detect_pictures(img: PageImage, text_boxes: list[Box]) -> list[Box]:
     min_side = 3.0 * img.scale
     for i in range(1, n):
         x, y, w, h, area = stats[i]
-        if w >= min_side and h >= min_side and area > 30:
+        # icons, photos - and short rules / dashes (thin but long)
+        if max(w, h) >= min_side and min(w, h) >= 4 and area > 30:
             pictures.append(img.to_pt(x + 2, y + 2, x + w - 2, y + h - 2))
     return pictures
 
@@ -233,27 +234,32 @@ class CellFinder:
     """Find the shaded or ruled cell around a piece of text by flood-filling
     its background colour (text glyphs are painted out first)."""
 
-    def __init__(self, img: PageImage, text_boxes: list[Box], dpi: int = 100):
+    def __init__(self, img: PageImage, texts: list[tuple[Box, tuple | None]], dpi: int = 100):
+        """*texts*: (box, background colour 0..1 or None) of every text."""
         s = dpi / 72.0
         self.s = s
         h = max(1, int(round(img.height * s / img.scale)))
         w = max(1, int(round(img.width * s / img.scale)))
         small = cv2.resize(img.rgb, (w, h), interpolation=cv2.INTER_AREA)
-        # paint text out with the colour around it
-        for b in text_boxes:
+        # paint text out with the colour behind it (measured at full
+        # resolution), so the fill can flow through the glyphs
+        for b, bg in texts:
             x0, y0 = max(0, int(b[0] * s) - 1), max(0, int(b[1] * s) - 1)
             x1, y1 = min(w, int(np.ceil(b[2] * s)) + 1), min(h, int(np.ceil(b[3] * s)) + 1)
             if x1 - x0 < 1 or y1 - y0 < 1:
                 continue
-            ring = np.concatenate(
-                [
-                    small[max(0, y0 - 1), x0:x1],
-                    small[min(h - 1, y1), x0:x1],
-                    small[y0:y1, max(0, x0 - 1)],
-                    small[y0:y1, min(w - 1, x1)],
-                ]
-            )
-            small[y0:y1, x0:x1] = np.median(ring, axis=0) if len(ring) else 255
+            if bg is not None:
+                small[y0:y1, x0:x1] = np.array(bg) * 255
+            else:
+                ring = np.concatenate(
+                    [
+                        small[max(0, y0 - 1), x0:x1],
+                        small[min(h - 1, y1), x0:x1],
+                        small[y0:y1, max(0, x0 - 1)],
+                        small[y0:y1, min(w - 1, x1)],
+                    ]
+                )
+                small[y0:y1, x0:x1] = np.median(ring, axis=0) if len(ring) else 255
         self.small = small
         self.w, self.h = w, h
 

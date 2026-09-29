@@ -186,7 +186,9 @@ def _estimate_size(text: str, ink_w: float, ink_h: float) -> float:
         if n_cjk >= 3:
             by_w = ink_w / _ems(text)
             # trust the width unless it is wildly off (e.g. letter-spacing)
-            if 0.5 * by_h <= by_w <= 1.3 * by_h:
+            # (letter-spaced labels such as "版 本 号" come out too wide:
+            # then the height is the better measure)
+            if 0.5 * by_h <= by_w <= 1.1 * by_h:
                 return by_w
         return by_h
     if re.search(r"[gjpqy(),;\[\]{}|/]", text):
