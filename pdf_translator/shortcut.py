@@ -17,6 +17,9 @@ from pathlib import Path
 
 APP_NAME = "PDF Translator"
 STATIC = Path(__file__).parent / "static"
+# The folder that contains the pdf_translator package: starting there makes
+# `-m pdf_translator.web` work even if `pip install -e .` was never run.
+PROJECT = Path(__file__).resolve().parent.parent
 
 
 def _desktop() -> Path:
@@ -49,13 +52,15 @@ def _windows(desktop: Path) -> Path:
         "$s = (New-Object -ComObject WScript.Shell).CreateShortcut($env:PT_LINK);"
         "$s.TargetPath = $env:PT_TARGET;"
         "$s.Arguments = '-m pdf_translator.web';"
-        "$s.WorkingDirectory = $env:USERPROFILE;"
+        "$s.WorkingDirectory = $env:PT_DIR;"
         "$s.IconLocation = $env:PT_ICON;"
         "$s.Description = 'Translate PDF files and keep their layout';"
         "$s.Save()"
     )
-    env = dict(os.environ, PT_LINK=str(link), PT_TARGET=str(target), PT_ICON=str(STATIC / "icon.ico"))
-    subprocess.run(["powershell", "-NoProfile", "-Command", ps], check=True, env=env)
+    env = dict(os.environ, PT_LINK=str(link), PT_TARGET=str(target), PT_ICON=str(STATIC / "icon.ico"), PT_DIR=str(PROJECT))
+    subprocess.run(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", ps], check=True, env=env)
+    if not link.exists():
+        raise RuntimeError(f"Windows did not create {link}")
     return link
 
 
@@ -69,7 +74,7 @@ def _macos(desktop: Path) -> Path:
     res.mkdir(parents=True)
     shutil.copy(STATIC / "icon.icns", res / "icon.icns")
     launcher = macos / "launcher"
-    launcher.write_text(f'#!/bin/sh\nexec "{sys.executable}" -m pdf_translator.web\n')
+    launcher.write_text(f'#!/bin/sh\ncd "{PROJECT}"\nexec "{sys.executable}" -m pdf_translator.web\n')
     launcher.chmod(launcher.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
     with open(app / "Contents" / "Info.plist", "wb") as f:
         plistlib.dump(
@@ -94,6 +99,7 @@ def _linux(desktop: Path) -> Path:
         "Type=Application\n"
         f"Name={APP_NAME}\n"
         "Comment=Translate PDF files and keep their layout\n"
+        f"Path={PROJECT}\n"
         f'Exec="{sys.executable}" -m pdf_translator.web\n'
         f"Icon={STATIC / 'icon.png'}\n"
         "Terminal=false\n"
