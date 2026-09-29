@@ -271,6 +271,22 @@ def make_bilingual(src_path: str, translated: pymupdf.Document, pages: list[int]
     return out
 
 
+def save_compact(doc: pymupdf.Document, path: str) -> None:
+    """Save without bloat.
+
+    Every inserted text box embeds its own copy of the font; garbage=4
+    merges the identical copies, then only the glyphs actually used are
+    kept (subsetting). Without this a page with 300 text boxes grows by
+    tens of megabytes.
+    """
+    merged = pymupdf.open("pdf", doc.tobytes(garbage=4, deflate=True))
+    try:
+        merged.subset_fonts()
+    except Exception:  # subsetting is an optimisation only
+        pass
+    merged.save(path, garbage=4, deflate=True, use_objstms=1)
+
+
 def translate_pdf(
     input_path: str,
     output_path: str,
@@ -315,9 +331,9 @@ def translate_pdf(
         tmp = pymupdf.open()
         tmp.insert_pdf(doc)
         out = make_bilingual(input_path, tmp, pages)
-        out.save(output_path, garbage=3, deflate=True)
+        save_compact(out, output_path)
     else:
-        doc.save(output_path, garbage=3, deflate=True)
+        save_compact(doc, output_path)
     report.seconds = time.time() - t0
     if opts.report:
         Path(opts.report).write_text(
