@@ -12,6 +12,7 @@ import json
 import os
 import re
 import shutil
+import sys
 import tempfile
 import threading
 import time
@@ -139,7 +140,9 @@ class Handler(BaseHTTPRequestHandler):
         if not parts:
             return self._send(200, (STATIC / "index.html").read_bytes(), "text/html; charset=utf-8")
         if parts == ["api", "status"]:
-            return self._json({"claude_key": bool(os.environ.get("ANTHROPIC_API_KEY"))})
+            return self._json({"app": "pdf-translator", "claude_key": bool(os.environ.get("ANTHROPIC_API_KEY"))})
+        if parts == ["icon.png"]:
+            return self._send(200, (STATIC / "icon.png").read_bytes(), "image/png", {"Cache-Control": "max-age=86400"})
         if len(parts) >= 3 and parts[:2] == ["api", "jobs"]:
             job = self._job(parts[2])
             if job is None:
@@ -166,6 +169,10 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):  # noqa: N802
         url = urlparse(self.path)
+        if url.path == "/api/shutdown":
+            self._json({"ok": True})
+            threading.Thread(target=self.server.shutdown, daemon=True).start()
+            return
         if url.path != "/api/translate":
             return self._json({"error": "not found"}, 404)
         length = int(self.headers.get("Content-Length") or 0)
@@ -208,16 +215,38 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--no-browser", action="store_true", help="do not open the browser")
     args = p.parse_args(argv)
     WORK.mkdir(parents=True, exist_ok=True)
-    server = ThreadingHTTPServer((args.host, args.port), Handler)
     url = f"http://{args.host}:{args.port}"
-    print(f"PDF Translator is running at {url}  (Ctrl+C to stop)")
+    try:
+        server = ThreadingHTTPServer((args.host, args.port), Handler)
+    except OSError:
+        # Already running (e.g. the desktop icon was clicked twice)? Then
+        # just bring up the browser.
+        if _already_running(url):
+            if not args.no_browser:
+                webbrowser.open(url)
+            return 0
+        raise SystemExit(f"Port {args.port} is in use. Try:  pdf-translate-web --port 8766")
+    if sys.stdout:  # None under pythonw (desktop icon)
+        print(f"PDF Translator is running at {url}  (Ctrl+C to stop)")
     if not args.no_browser:
         threading.Timer(0.8, lambda: webbrowser.open(url)).start()
     try:
         server.serve_forever()
     except KeyboardInterrupt:
         pass
+    finally:
+        shutil.rmtree(WORK, ignore_errors=True)
     return 0
+
+
+def _already_running(url: str) -> bool:
+    from urllib.request import urlopen
+
+    try:
+        with urlopen(url + "/api/status", timeout=2) as r:
+            return json.loads(r.read().decode()).get("app") == "pdf-translator"
+    except Exception:
+        return False
 
 
 if __name__ == "__main__":

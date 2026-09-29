@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>PDF Translator</title>
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 32 32%22%3E%3Crect width=%2232%22 height=%2232%22 rx=%228%22 fill=%22%233b5bfd%22/%3E%3Cpath d=%22M7 10h11M12.5 8v2M9.5 10c.8 4 3.3 7 6.5 8.5M15 10c-1 4.3-4 8-8.5 10M18 25l5-11 5 11M19.8 21h6.4%22 stroke=%22white%22 stroke-width=%222%22 fill=%22none%22 stroke-linecap=%22round%22/%3E%3C/svg%3E">
+<link rel="icon" href="/icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -69,9 +69,11 @@ header { display: flex; align-items: center; gap: 14px; padding: 22px 0 26px; }
   width: 42px; height: 42px; border-radius: 12px; display: grid; place-items: center;
   background: linear-gradient(135deg, var(--accent), #7c5cff); color: #fff; box-shadow: var(--shadow);
 }
+.logo-img { width: 46px; height: 46px; display: block; filter: drop-shadow(0 4px 10px rgba(59, 91, 253, .25)); }
 .brand h1 { font-size: 19px; margin: 0; letter-spacing: -.01em; }
 .brand p { margin: 0; color: var(--text-2); font-size: 13.5px; }
 .spacer { flex: 1; }
+header .icon-btn + .icon-btn { margin-left: 2px; }
 .icon-btn {
   width: 38px; height: 38px; border-radius: 10px; border: 1px solid var(--border);
   background: var(--surface); display: grid; place-items: center; cursor: pointer; color: var(--text-2);
@@ -256,14 +258,15 @@ footer { text-align: center; color: var(--text-3); font-size: 12.5px; margin-top
 <body>
 <div class="wrap">
   <header>
-    <div class="logo" aria-hidden="true">
-      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h9M8.5 3v2M6 5c.6 3 2.7 5.6 5.5 7"/><path d="M11 5c-.8 3.6-3.3 6.7-7 8.5"/><path d="M13 21l4.5-10L22 21M14.5 17.5h6"/></svg>
-    </div>
+    <img class="logo-img" src="/icon.png" alt="" width="46" height="46">
     <div class="brand">
       <h1>PDF Translator</h1>
       <p>แปลเอกสาร PDF โดยคงรูปแบบ ตาราง และตำแหน่งเดิม</p>
     </div>
     <div class="spacer"></div>
+    <button class="icon-btn" id="quit" title="ปิดโปรแกรม" aria-label="ปิดโปรแกรม">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 3v9"/><path d="M6.4 6.4a8 8 0 1 0 11.2 0"/></svg>
+    </button>
     <button class="icon-btn" id="theme" title="สลับโหมดสว่าง/มืด" aria-label="สลับธีม">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
     </button>
@@ -453,6 +456,15 @@ $("theme").onclick = () => {
   const next = cur === "dark" ? "light" : "dark";
   document.documentElement.dataset.theme = next;
   try { localStorage.setItem("theme", next); } catch {}
+};
+
+// ---------- quit (the desktop icon runs without a console window)
+$("quit").onclick = async () => {
+  if (!confirm("ปิดโปรแกรม PDF Translator?")) return;
+  try { await fetch("/api/shutdown", { method: "POST" }); } catch {}
+  document.body.innerHTML = '<div style="display:grid;place-items:center;height:100vh;font-family:var(--font);color:var(--text-2);text-align:center">' +
+    '<div><h2 style="color:var(--text);margin:0 0 6px">ปิดโปรแกรมแล้ว</h2>' +
+    '<p style="margin:0">ปิดแท็บนี้ได้เลย · เปิดใหม่ได้จากไอคอนบนหน้าจอ</p></div></div>';
 };
 
 // ---------- languages
