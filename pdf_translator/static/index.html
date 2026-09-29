@@ -1,0 +1,651 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PDF Translator</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 32 32%22%3E%3Crect width=%2232%22 height=%2232%22 rx=%228%22 fill=%22%233b5bfd%22/%3E%3Cpath d=%22M7 10h11M12.5 8v2M9.5 10c.8 4 3.3 7 6.5 8.5M15 10c-1 4.3-4 8-8.5 10M18 25l5-11 5 11M19.8 21h6.4%22 stroke=%22white%22 stroke-width=%222%22 fill=%22none%22 stroke-linecap=%22round%22/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #f5f6f8;
+  --bg-grad: radial-gradient(1200px 600px at 10% -10%, #e7edff 0%, transparent 60%),
+             radial-gradient(900px 500px at 110% 10%, #e9f7f2 0%, transparent 55%);
+  --surface: #ffffff;
+  --surface-2: #f8f9fb;
+  --border: #e4e7ec;
+  --border-strong: #d0d5dd;
+  --text: #101828;
+  --text-2: #475467;
+  --text-3: #98a2b3;
+  --accent: #3b5bfd;
+  --accent-2: #2f49d6;
+  --accent-soft: #eef1ff;
+  --ok: #12b76a;
+  --ok-soft: #e8f8f0;
+  --warn: #f79009;
+  --warn-soft: #fff5e6;
+  --err: #f04438;
+  --err-soft: #fef0ef;
+  --shadow: 0 1px 2px rgba(16, 24, 40, .05), 0 8px 24px -8px rgba(16, 24, 40, .10);
+  --radius: 16px;
+  --font: "IBM Plex Sans Thai", "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0b0e14; --bg-grad: radial-gradient(1200px 600px at 10% -10%, #17204a 0%, transparent 60%),
+      radial-gradient(900px 500px at 110% 10%, #0f2a22 0%, transparent 55%);
+    --surface: #121722; --surface-2: #0f141d; --border: #232a38; --border-strong: #2f3847;
+    --text: #eef1f6; --text-2: #a9b2c3; --text-3: #6b7588;
+    --accent: #6b83ff; --accent-2: #8a9cff; --accent-soft: #1b2242;
+    --ok-soft: #0f2a1f; --warn-soft: #2d2210; --err-soft: #2f1414;
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px -8px rgba(0,0,0,.6);
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0b0e14; --bg-grad: radial-gradient(1200px 600px at 10% -10%, #17204a 0%, transparent 60%),
+    radial-gradient(900px 500px at 110% 10%, #0f2a22 0%, transparent 55%);
+  --surface: #121722; --surface-2: #0f141d; --border: #232a38; --border-strong: #2f3847;
+  --text: #eef1f6; --text-2: #a9b2c3; --text-3: #6b7588;
+  --accent: #6b83ff; --accent-2: #8a9cff; --accent-soft: #1b2242;
+  --ok-soft: #0f2a1f; --warn-soft: #2d2210; --err-soft: #2f1414;
+  --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px -8px rgba(0,0,0,.6);
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  font-family: var(--font); color: var(--text);
+  background: var(--bg-grad), var(--bg); background-attachment: fixed;
+  min-height: 100vh; -webkit-font-smoothing: antialiased; line-height: 1.5;
+}
+button, input, select, textarea { font: inherit; color: inherit; }
+.wrap { max-width: 1280px; margin: 0 auto; padding: 0 20px 48px; }
+
+/* ---------- header */
+header { display: flex; align-items: center; gap: 14px; padding: 22px 0 26px; }
+.logo {
+  width: 42px; height: 42px; border-radius: 12px; display: grid; place-items: center;
+  background: linear-gradient(135deg, var(--accent), #7c5cff); color: #fff; box-shadow: var(--shadow);
+}
+.brand h1 { font-size: 19px; margin: 0; letter-spacing: -.01em; }
+.brand p { margin: 0; color: var(--text-2); font-size: 13.5px; }
+.spacer { flex: 1; }
+.icon-btn {
+  width: 38px; height: 38px; border-radius: 10px; border: 1px solid var(--border);
+  background: var(--surface); display: grid; place-items: center; cursor: pointer; color: var(--text-2);
+}
+.icon-btn:hover { color: var(--text); border-color: var(--border-strong); }
+
+/* ---------- layout */
+.grid { display: grid; grid-template-columns: 380px 1fr; gap: 20px; align-items: start; }
+@media (max-width: 960px) { .grid { grid-template-columns: 1fr; } }
+.card {
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+.panel { padding: 20px; position: sticky; top: 16px; }
+@media (max-width: 960px) { .panel { position: static; } }
+.section + .section { margin-top: 20px; }
+.label { font-size: 13px; font-weight: 600; color: var(--text-2); margin-bottom: 8px; display: flex; align-items: center; gap: 6px; }
+
+/* ---------- drop zone */
+.drop {
+  display: block; border: 1.5px dashed var(--border-strong); border-radius: 14px; padding: 22px 16px; text-align: center;
+  background: var(--surface-2); cursor: pointer; transition: .15s; position: relative;
+}
+.drop:hover, .drop.drag { border-color: var(--accent); background: var(--accent-soft); }
+.drop .big { font-weight: 600; margin-top: 8px; }
+.drop .small { color: var(--text-3); font-size: 13px; }
+.drop svg { color: var(--accent); }
+.file-chip {
+  display: none; align-items: center; gap: 12px; padding: 12px; border: 1px solid var(--border);
+  border-radius: 12px; background: var(--surface-2);
+}
+.file-chip.show { display: flex; }
+.file-chip .pdf {
+  width: 38px; height: 44px; border-radius: 8px; background: #fde7e7; color: #d92d20; display: grid;
+  place-items: center; font-size: 11px; font-weight: 700; flex: none;
+}
+.file-chip .meta { min-width: 0; flex: 1; }
+.file-chip .name { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.file-chip .size { color: var(--text-3); font-size: 12.5px; }
+.link-btn { background: none; border: 0; color: var(--accent); cursor: pointer; font-size: 13px; font-weight: 600; padding: 4px; }
+
+/* ---------- languages */
+.langs { display: grid; grid-template-columns: 1fr auto 1fr; gap: 8px; align-items: center; }
+select, input[type="text"], input[type="password"], textarea {
+  width: 100%; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--border);
+  background: var(--surface); outline: none; transition: .15s;
+}
+select:focus, input:focus, textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.swap { width: 38px; height: 38px; border-radius: 50%; border: 1px solid var(--border); background: var(--surface); cursor: pointer; color: var(--text-2); display: grid; place-items: center; }
+.swap:hover { color: var(--accent); border-color: var(--accent); }
+
+/* ---------- engine choice */
+.engines { display: grid; gap: 8px; }
+.engine {
+  display: flex; gap: 12px; padding: 12px 14px; border: 1.5px solid var(--border); border-radius: 12px;
+  cursor: pointer; transition: .15s; background: var(--surface); align-items: flex-start;
+}
+.engine:hover { border-color: var(--border-strong); }
+.engine.active { border-color: var(--accent); background: var(--accent-soft); }
+.engine input { display: none; }
+.radio { width: 18px; height: 18px; border-radius: 50%; border: 2px solid var(--border-strong); margin-top: 2px; flex: none; position: relative; }
+.engine.active .radio { border-color: var(--accent); }
+.engine.active .radio::after { content: ""; position: absolute; inset: 3px; border-radius: 50%; background: var(--accent); }
+.engine .t { font-weight: 600; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.engine .d { color: var(--text-2); font-size: 13px; }
+.badge { font-size: 11.5px; font-weight: 600; padding: 2px 8px; border-radius: 999px; }
+.badge.free { background: var(--ok-soft); color: var(--ok); }
+.badge.best { background: #f1ecff; color: #7c5cff; }
+:root[data-theme="dark"] .badge.best { background: #231c3d; }
+.key { margin-top: 10px; display: none; }
+.key.show { display: block; }
+.hint { color: var(--text-3); font-size: 12.5px; margin-top: 6px; }
+
+/* ---------- advanced */
+details { border: 1px solid var(--border); border-radius: 12px; }
+summary { padding: 11px 14px; cursor: pointer; font-weight: 600; font-size: 14px; list-style: none; display: flex; justify-content: space-between; align-items: center; }
+summary::-webkit-details-marker { display: none; }
+summary .chev { transition: .2s; color: var(--text-3); }
+details[open] summary .chev { transform: rotate(180deg); }
+.adv { padding: 4px 14px 14px; display: grid; gap: 12px; }
+.row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.toggle { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 14px; }
+.switch { position: relative; width: 40px; height: 23px; flex: none; }
+.switch input { opacity: 0; width: 0; height: 0; }
+.switch span { position: absolute; inset: 0; background: var(--border-strong); border-radius: 999px; transition: .2s; cursor: pointer; }
+.switch span::after { content: ""; position: absolute; width: 17px; height: 17px; left: 3px; top: 3px; background: #fff; border-radius: 50%; transition: .2s; box-shadow: 0 1px 2px rgba(0,0,0,.2); }
+.switch input:checked + span { background: var(--accent); }
+.switch input:checked + span::after { transform: translateX(17px); }
+textarea { resize: vertical; min-height: 60px; }
+
+/* ---------- primary button */
+.primary {
+  width: 100%; margin-top: 20px; padding: 13px 16px; border: 0; border-radius: 12px; cursor: pointer;
+  background: linear-gradient(135deg, var(--accent), #6a4cff); color: #fff; font-weight: 600; font-size: 15.5px;
+  box-shadow: 0 6px 16px -6px var(--accent); display: flex; gap: 10px; justify-content: center; align-items: center;
+  transition: transform .1s, filter .15s;
+}
+.primary:hover { filter: brightness(1.05); }
+.primary:active { transform: translateY(1px); }
+.primary:disabled { opacity: .5; cursor: not-allowed; box-shadow: none; }
+
+/* ---------- workspace */
+.stage { padding: 22px; min-height: 560px; }
+.empty { display: grid; place-items: center; text-align: center; height: 100%; min-height: 520px; color: var(--text-2); }
+.empty h2 { color: var(--text); font-size: 22px; margin: 18px 0 6px; letter-spacing: -.01em; }
+.empty p { margin: 0 auto; max-width: 460px; }
+.features { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-top: 28px; text-align: left; }
+@media (max-width: 640px) { .features { grid-template-columns: 1fr; } }
+.feature { padding: 14px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface-2); }
+.feature b { display: block; margin: 8px 0 2px; color: var(--text); font-size: 14px; }
+.feature span { font-size: 13px; }
+.feature .ic { width: 32px; height: 32px; border-radius: 9px; display: grid; place-items: center; background: var(--accent-soft); color: var(--accent); }
+.hero-art { width: 132px; height: 132px; }
+
+/* ---------- progress */
+.progress-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+.progress-head h2 { margin: 0; font-size: 18px; }
+.muted { color: var(--text-2); font-size: 13.5px; }
+.steps { display: grid; gap: 10px; margin: 20px 0; }
+.step { display: flex; gap: 14px; align-items: center; padding: 14px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface-2); transition: .2s; }
+.step .dot { width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; border: 2px solid var(--border-strong); color: var(--text-3); flex: none; font-size: 13px; font-weight: 700; }
+.step.active { border-color: var(--accent); background: var(--accent-soft); }
+.step.active .dot { border-color: var(--accent); color: var(--accent); }
+.step.active .dot::after { content: ""; width: 12px; height: 12px; border: 2px solid var(--accent); border-right-color: transparent; border-radius: 50%; animation: spin .8s linear infinite; }
+.step.active .dot span { display: none; }
+.step.done .dot { background: var(--ok); border-color: var(--ok); color: #fff; }
+.step .st { font-weight: 600; }
+.step .sd { font-size: 13px; color: var(--text-2); }
+.bar { height: 6px; border-radius: 999px; background: var(--border); overflow: hidden; margin-top: 8px; display: none; }
+.bar.show { display: block; }
+.bar i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, var(--accent), #7c5cff); transition: width .4s; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.log { margin-top: 6px; }
+.log pre { margin: 0; max-height: 180px; overflow: auto; font: 12px/1.55 ui-monospace, "SFMono-Regular", Menlo, monospace; color: var(--text-2); background: var(--surface-2); border-radius: 10px; padding: 12px; white-space: pre-wrap; }
+
+/* ---------- results */
+.result-top { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.result-top h2 { margin: 0; font-size: 20px; letter-spacing: -.01em; }
+.ok-pill { display: inline-flex; gap: 6px; align-items: center; background: var(--ok-soft); color: var(--ok); font-weight: 600; font-size: 13px; padding: 5px 11px; border-radius: 999px; }
+.warn-pill { background: var(--warn-soft); color: var(--warn); }
+.dl {
+  display: inline-flex; align-items: center; gap: 8px; padding: 10px 16px; border-radius: 11px; font-weight: 600;
+  background: var(--text); color: var(--surface); text-decoration: none; border: 0; cursor: pointer;
+}
+.dl:hover { filter: brightness(1.15); }
+.ghost { display: inline-flex; align-items: center; gap: 8px; padding: 10px 14px; border-radius: 11px; font-weight: 600; background: var(--surface); border: 1px solid var(--border); cursor: pointer; color: var(--text); }
+.stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin: 18px 0; }
+@media (max-width: 700px) { .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.stat { padding: 14px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface-2); }
+.stat .n { font-size: 24px; font-weight: 700; letter-spacing: -.02em; font-family: "Inter", var(--font); font-variant-numeric: tabular-nums; }
+.stat .l { font-size: 12.5px; color: var(--text-2); }
+.stat.good .n { color: var(--ok); }
+.viewer-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
+.seg { display: inline-flex; padding: 3px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 11px; }
+.seg button { border: 0; background: none; padding: 7px 12px; border-radius: 8px; cursor: pointer; font-size: 13.5px; font-weight: 600; color: var(--text-2); }
+.seg button.on { background: var(--surface); color: var(--text); box-shadow: 0 1px 3px rgba(16,24,40,.12); }
+.pager { display: inline-flex; align-items: center; gap: 6px; margin-left: auto; }
+.pager button { width: 34px; height: 34px; border-radius: 9px; border: 1px solid var(--border); background: var(--surface); cursor: pointer; display: grid; place-items: center; color: var(--text-2); }
+.pager button:disabled { opacity: .4; cursor: default; }
+.pager span { font-size: 13.5px; color: var(--text-2); min-width: 64px; text-align: center; font-variant-numeric: tabular-nums; }
+.viewer { position: relative; border: 1px solid var(--border); border-radius: 12px; overflow: auto; background: repeating-conic-gradient(var(--surface-2) 0% 25%, var(--surface) 0% 50%) 0 / 20px 20px; max-height: 78vh; }
+.canvas { position: relative; margin: 0 auto; width: 100%; user-select: none; }
+.canvas.zoom { width: 220%; }
+.canvas img { display: block; width: 100%; height: auto; }
+.canvas .top { position: absolute; inset: 0; clip-path: inset(0 0 0 var(--cut, 50%)); }
+.canvas .handle { position: absolute; top: 0; bottom: 0; left: var(--cut, 50%); width: 2px; background: var(--accent); transform: translateX(-1px); pointer-events: none; }
+.canvas .handle::after {
+  content: "⇆"; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 34px; height: 34px;
+  border-radius: 50%; background: var(--accent); color: #fff; display: grid; place-items: center; font-size: 16px; box-shadow: 0 4px 12px rgba(0,0,0,.25);
+}
+.canvas .tag { position: absolute; top: 10px; font-size: 12px; font-weight: 700; padding: 3px 9px; border-radius: 999px; background: rgba(16,24,40,.72); color: #fff; }
+.canvas .tag.l { left: 10px; } .canvas .tag.r { right: 10px; background: var(--accent); }
+.sbs { display: grid; grid-template-columns: 1fr 1fr; gap: 2px; }
+.loading-img { min-height: 320px; display: grid; place-items: center; color: var(--text-3); }
+.issues { margin-top: 14px; border: 1px solid var(--warn); background: var(--warn-soft); border-radius: 12px; padding: 12px 14px; font-size: 13.5px; }
+.error-box { border: 1px solid var(--err); background: var(--err-soft); border-radius: 12px; padding: 16px; margin-top: 16px; }
+.error-box b { color: var(--err); }
+.hidden { display: none !important; }
+footer { text-align: center; color: var(--text-3); font-size: 12.5px; margin-top: 28px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="logo" aria-hidden="true">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h9M8.5 3v2M6 5c.6 3 2.7 5.6 5.5 7"/><path d="M11 5c-.8 3.6-3.3 6.7-7 8.5"/><path d="M13 21l4.5-10L22 21M14.5 17.5h6"/></svg>
+    </div>
+    <div class="brand">
+      <h1>PDF Translator</h1>
+      <p>แปลเอกสาร PDF โดยคงรูปแบบ ตาราง และตำแหน่งเดิม</p>
+    </div>
+    <div class="spacer"></div>
+    <button class="icon-btn" id="theme" title="สลับโหมดสว่าง/มืด" aria-label="สลับธีม">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+    </button>
+  </header>
+
+  <div class="grid">
+    <!-- ======================= settings -->
+    <aside class="card panel">
+      <div class="section">
+        <div class="label">1. เลือกไฟล์ PDF</div>
+        <label class="drop" id="drop">
+          <input type="file" id="file" accept="application/pdf,.pdf" hidden>
+          <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4m0 0-4 4m4-4 4 4"/><path d="M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>
+          <div class="big">ลากไฟล์มาวาง หรือคลิกเพื่อเลือก</div>
+          <div class="small">PDF ทุกแบบ รวมไฟล์สแกน · สูงสุด 200 MB</div>
+        </label>
+        <div class="file-chip" id="chip">
+          <div class="pdf">PDF</div>
+          <div class="meta"><div class="name" id="fname"></div><div class="size" id="fsize"></div></div>
+          <button class="link-btn" id="change">เปลี่ยน</button>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="label">2. ภาษา</div>
+        <div class="langs">
+          <select id="src" aria-label="ภาษาต้นฉบับ"></select>
+          <button class="swap" id="swap" title="สลับภาษา" aria-label="สลับภาษา">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 7h13l-4-4M17 17H4l4 4"/></svg>
+          </button>
+          <select id="tgt" aria-label="ภาษาที่ต้องการ"></select>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="label">3. วิธีแปล</div>
+        <div class="engines">
+          <label class="engine active" data-engine="google">
+            <input type="radio" name="engine" value="google" checked>
+            <span class="radio"></span>
+            <span><span class="t">Google Translate <span class="badge free">ฟรี</span></span>
+            <span class="d">ไม่ต้องสมัคร ไม่ต้องใช้ key เหมาะกับงานทั่วไป</span></span>
+          </label>
+          <label class="engine" data-engine="claude">
+            <input type="radio" name="engine" value="claude">
+            <span class="radio"></span>
+            <span><span class="t">Claude <span class="badge best">คุณภาพสูงสุด</span></span>
+            <span class="d">อ่านลื่นเหมือนคนแปล ศัพท์เทคนิคแม่น ตัดคำให้พอดีช่อง</span></span>
+          </label>
+        </div>
+        <div class="key" id="keybox">
+          <input type="password" id="apikey" placeholder="ANTHROPIC_API_KEY (sk-ant-...)" autocomplete="off">
+          <div class="hint" id="keyhint">สมัครได้ที่ console.anthropic.com · key ใช้บนเครื่องนี้เท่านั้น</div>
+        </div>
+      </div>
+
+      <div class="section">
+        <details>
+          <summary>ตัวเลือกเพิ่มเติม <svg class="chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m6 9 6 6 6-6"/></svg></summary>
+          <div class="adv">
+            <div class="row2">
+              <div><div class="label">หน้าที่จะแปล</div><input type="text" id="pages" placeholder="ทั้งหมด (เช่น 1-3,5)"></div>
+              <div><div class="label">OCR</div>
+                <select id="ocr"><option value="auto">อัตโนมัติ</option><option value="always">ทุกหน้า</option><option value="never">ไม่ใช้</option></select>
+              </div>
+            </div>
+            <div class="toggle"><span>วางต้นฉบับกับคำแปลคู่กัน<br><span class="hint">ได้ PDF ที่มีหน้าซ้าย-ขวาเทียบกัน</span></span>
+              <label class="switch"><input type="checkbox" id="bilingual"><span></span></label></div>
+            <div id="notesbox" class="hidden"><div class="label">คำแนะนำถึงผู้แปล (Claude)</div>
+              <textarea id="notes" placeholder="เช่น ผู้อ่านคือช่างเทคนิค ใช้ภาษาทางการ"></textarea></div>
+          </div>
+        </details>
+      </div>
+
+      <button class="primary" id="go" disabled>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+        แปลเอกสาร
+      </button>
+    </aside>
+
+    <!-- ======================= workspace -->
+    <main class="card stage" id="stage">
+      <!-- empty -->
+      <section id="v-empty" class="empty">
+        <div>
+          <svg class="hero-art" viewBox="0 0 140 140" fill="none" aria-hidden="true">
+            <rect x="18" y="14" width="62" height="84" rx="8" fill="var(--surface-2)" stroke="var(--border-strong)" stroke-width="2"/>
+            <rect x="28" y="28" width="30" height="5" rx="2.5" fill="var(--text-3)"/>
+            <rect x="28" y="40" width="42" height="4" rx="2" fill="var(--border-strong)"/>
+            <rect x="28" y="49" width="38" height="4" rx="2" fill="var(--border-strong)"/>
+            <rect x="28" y="62" width="42" height="22" rx="3" stroke="var(--border-strong)" stroke-width="2"/>
+            <path d="M28 73h42M49 62v22" stroke="var(--border-strong)" stroke-width="2"/>
+            <rect x="60" y="42" width="62" height="84" rx="8" fill="var(--surface)" stroke="var(--accent)" stroke-width="2"/>
+            <rect x="70" y="56" width="30" height="5" rx="2.5" fill="var(--accent)"/>
+            <rect x="70" y="68" width="42" height="4" rx="2" fill="var(--accent-soft)"/>
+            <rect x="70" y="77" width="38" height="4" rx="2" fill="var(--accent-soft)"/>
+            <rect x="70" y="90" width="42" height="22" rx="3" stroke="var(--accent)" stroke-width="2"/>
+            <path d="M70 101h42M91 90v22" stroke="var(--accent)" stroke-width="2"/>
+          </svg>
+          <h2>แปลแล้วหน้าตาเหมือนเดิม</h2>
+          <p>เลือกไฟล์ PDF แล้วกด "แปลเอกสาร" ระบบจะแปลทุกข้อความและวางกลับที่เดิม พร้อมตรวจว่าตัวอักษรไม่ทับกัน</p>
+          <div class="features">
+            <div class="feature"><div class="ic"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg></div>
+              <b>คงตารางและรูป</b><span>เส้น พื้นหลัง ไอคอน และตัวเลขอยู่ครบ</span></div>
+            <div class="feature"><div class="ic"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2M7 12h10"/></svg></div>
+              <b>อ่าน PDF สแกนได้</b><span>OCR ในเครื่อง รองรับตัวอักษรจีน</span></div>
+            <div class="feature"><div class="ic"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 12 2 2 4-4"/><path d="M12 3 4 6v6c0 5 3.5 8 8 9 4.5-1 8-4 8-9V6z"/></svg></div>
+              <b>ตรวจอัตโนมัติ</b><span>ไม่ทับกัน ไม่ล้นช่อง ไม่ตกหล่น</span></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- progress -->
+      <section id="v-progress" class="hidden">
+        <div class="progress-head">
+          <h2 id="p-title">กำลังแปล…</h2>
+          <span class="muted" id="p-time">0 วินาที</span>
+        </div>
+        <div class="muted" id="p-file"></div>
+        <div class="steps">
+          <div class="step" data-step="analyse"><div class="dot"><span>1</span></div><div><div class="st">อ่านและวิเคราะห์หน้า</div><div class="sd">หาข้อความ ตาราง รูป (ใช้ OCR ถ้าจำเป็น — หน้าใหญ่ใช้เวลาราว 30–60 วินาที)</div></div></div>
+          <div class="step" data-step="translate"><div class="dot"><span>2</span></div><div style="flex:1"><div class="st">แปลข้อความ</div><div class="sd" id="t-desc">ส่งข้อความไปแปลทีละหน้าตามลำดับการอ่าน</div><div class="bar" id="t-bar"><i></i></div></div></div>
+          <div class="step" data-step="typeset"><div class="dot"><span>3</span></div><div><div class="st">จัดวางและตรวจสอบ</div><div class="sd">วางคำแปลในพื้นที่เดิม แล้วตรวจว่าไม่มีอะไรทับกัน</div></div></div>
+        </div>
+        <details class="log"><summary>รายละเอียดการทำงาน <svg class="chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m6 9 6 6 6-6"/></svg></summary><pre id="log"></pre></details>
+        <div class="error-box hidden" id="err"><b>เกิดข้อผิดพลาด</b><div id="errmsg"></div>
+          <div style="margin-top:12px"><button class="ghost" id="retry">ลองใหม่</button></div></div>
+      </section>
+
+      <!-- result -->
+      <section id="v-result" class="hidden">
+        <div class="result-top">
+          <h2>แปลเสร็จแล้ว</h2>
+          <span class="ok-pill" id="qa"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 5 5L20 7"/></svg> ไม่มีข้อความทับกัน</span>
+          <div class="spacer"></div>
+          <button class="ghost" id="again">แปลไฟล์ใหม่</button>
+          <a class="dl" id="download" href="#">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v12m0 0-4-4m4 4 4-4M4 20h16"/></svg>
+            ดาวน์โหลด PDF
+          </a>
+        </div>
+        <div class="stats">
+          <div class="stat"><div class="n" id="s-pages">–</div><div class="l">หน้า</div></div>
+          <div class="stat"><div class="n" id="s-tr">–</div><div class="l">ข้อความที่แปล</div></div>
+          <div class="stat"><div class="n" id="s-kept">–</div><div class="l">คงเดิม (ตัวเลข/รหัส)</div></div>
+          <div class="stat good" id="s-issues-box"><div class="n" id="s-issues">0</div><div class="l">ปัญหาการจัดวาง</div></div>
+        </div>
+        <div class="viewer-bar">
+          <div class="seg" id="mode">
+            <button data-mode="slide" class="on">เลื่อนเทียบ</button>
+            <button data-mode="sbs">คู่กัน</button>
+            <button data-mode="out">คำแปล</button>
+            <button data-mode="src">ต้นฉบับ</button>
+          </div>
+          <button class="ghost" id="zoom" style="padding:7px 12px">ขยาย</button>
+          <div class="pager">
+            <button id="prev" aria-label="หน้าก่อน"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="m15 18-6-6 6-6"/></svg></button>
+            <span id="pnum">1 / 1</span>
+            <button id="next" aria-label="หน้าถัดไป"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="m9 18 6-6-6-6"/></svg></button>
+          </div>
+        </div>
+        <div class="viewer" id="viewer"><div class="canvas" id="canvas"></div></div>
+        <div class="issues hidden" id="issues"></div>
+        <p class="hint" style="margin-top:10px">ตัวอักษรบางช่องเล็กกว่าต้นฉบับเล็กน้อย เพราะภาษาปลายทางยาวกว่า — ระบบย่อเท่าที่จำเป็นเพื่อให้อยู่ในช่องเดิม</p>
+      </section>
+    </main>
+  </div>
+  <footer>ประมวลผลบนเครื่องของคุณ · ไฟล์ไม่ถูกเก็บไว้บนเซิร์ฟเวอร์ภายนอก (ยกเว้นข้อความที่ส่งไปแปล)</footer>
+</div>
+
+<script>
+const LANGS = [
+  ["zh", "จีน"], ["en", "อังกฤษ"], ["th", "ไทย"], ["ja", "ญี่ปุ่น"],
+  ["ko", "เกาหลี"], ["vi", "เวียดนาม"], ["id", "อินโดนีเซีย"], ["ms", "มลายู"],
+  ["lo", "ลาว"], ["my", "พม่า"], ["km", "เขมร"], ["fr", "ฝรั่งเศส"], ["de", "เยอรมัน"],
+  ["es", "สเปน"], ["ru", "รัสเซีย"], ["ar", "อาหรับ"], ["hi", "ฮินดี"],
+];
+const $ = (id) => document.getElementById(id);
+const state = { file: null, job: null, page: 0, pages: 1, mode: "slide", zoom: false, timer: null, cut: 50 };
+
+// ---------- theme
+const saved = (() => { try { return localStorage.getItem("theme"); } catch { return null; } })();
+if (saved) document.documentElement.dataset.theme = saved;
+$("theme").onclick = () => {
+  const dark = matchMedia("(prefers-color-scheme: dark)").matches;
+  const cur = document.documentElement.dataset.theme || (dark ? "dark" : "light");
+  const next = cur === "dark" ? "light" : "dark";
+  document.documentElement.dataset.theme = next;
+  try { localStorage.setItem("theme", next); } catch {}
+};
+
+// ---------- languages
+for (const [sel, def] of [["src", "zh"], ["tgt", "en"]]) {
+  for (const [code, name] of LANGS) $(sel).add(new Option(name, code, false, code === def));
+}
+$("swap").onclick = () => { const a = $("src").value; $("src").value = $("tgt").value; $("tgt").value = a; };
+
+// ---------- file
+const fmt = (n) => n > 1048576 ? (n / 1048576).toFixed(1) + " MB" : Math.max(1, Math.round(n / 1024)) + " KB";
+function setFile(f) {
+  if (!f) return;
+  if (!/\.pdf$/i.test(f.name) && f.type !== "application/pdf") { alert("กรุณาเลือกไฟล์ PDF"); return; }
+  state.file = f;
+  $("fname").textContent = f.name; $("fsize").textContent = fmt(f.size);
+  $("drop").classList.add("hidden"); $("chip").classList.add("show");
+  $("go").disabled = false;
+}
+$("file").onchange = (e) => setFile(e.target.files[0]);
+$("change").onclick = (e) => { e.preventDefault(); $("file").value = ""; $("file").click(); };
+const drop = $("drop");
+["dragenter", "dragover"].forEach((ev) => drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.add("drag"); }));
+["dragleave", "drop"].forEach((ev) => drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.remove("drag"); }));
+drop.addEventListener("drop", (e) => setFile(e.dataTransfer.files[0]));
+document.addEventListener("dragover", (e) => e.preventDefault());
+document.addEventListener("drop", (e) => { e.preventDefault(); if (e.dataTransfer.files[0]) setFile(e.dataTransfer.files[0]); });
+
+// ---------- engine
+document.querySelectorAll(".engine").forEach((el) => el.addEventListener("click", () => {
+  document.querySelectorAll(".engine").forEach((x) => x.classList.toggle("active", x === el));
+  el.querySelector("input").checked = true;
+  const claude = el.dataset.engine === "claude";
+  $("keybox").classList.toggle("show", claude);
+  $("notesbox").classList.toggle("hidden", !claude);
+}));
+fetch("/api/status").then((r) => r.json()).then((s) => {
+  if (s.claude_key) { $("apikey").placeholder = "ตั้งค่า key ไว้แล้วในเครื่อง (ไม่ต้องกรอก)"; }
+}).catch(() => {});
+
+// ---------- views
+function show(view) {
+  for (const v of ["empty", "progress", "result"]) $("v-" + v).classList.toggle("hidden", v !== view);
+}
+function setStep(step) {
+  const order = ["analyse", "translate", "typeset", "done"];
+  const idx = order.indexOf(step === "queued" ? "analyse" : step);
+  document.querySelectorAll(".step").forEach((el) => {
+    const i = order.indexOf(el.dataset.step);
+    el.classList.toggle("done", i < idx || step === "done");
+    el.classList.toggle("active", i === idx && step !== "done");
+  });
+}
+
+// ---------- run
+$("go").onclick = start;
+$("retry").onclick = start;
+$("again").onclick = () => { show("empty"); state.job = null; };
+
+async function start() {
+  if (!state.file) return;
+  const engine = document.querySelector('input[name="engine"]:checked').value;
+  const q = new URLSearchParams({
+    name: state.file.name, source: $("src").value, target: $("tgt").value, engine,
+    pages: $("pages").value.trim(), ocr: $("ocr").value, bilingual: $("bilingual").checked ? "1" : "0",
+    notes: $("notes").value.trim(),
+  });
+  if (engine === "claude" && $("apikey").value.trim()) q.set("api_key", $("apikey").value.trim());
+  show("progress");
+  $("err").classList.add("hidden");
+  $("p-title").textContent = "กำลังอัปโหลด…";
+  $("p-file").textContent = state.file.name;
+  $("log").textContent = ""; $("t-bar").classList.remove("show"); $("t-bar").firstElementChild.style.width = "0";
+  setStep("analyse");
+  $("go").disabled = true;
+  try {
+    const r = await fetch("/api/translate?" + q, { method: "POST", body: state.file, headers: { "Content-Type": "application/pdf" } });
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.error || r.statusText);
+    state.job = j.id; state.pages = j.pages;
+    $("p-title").textContent = "กำลังแปล…";
+    poll();
+  } catch (e) { fail(e.message); }
+}
+
+function fail(msg) {
+  $("p-title").textContent = "แปลไม่สำเร็จ";
+  $("errmsg").textContent = msg;
+  $("err").classList.remove("hidden");
+  document.querySelectorAll(".step.active").forEach((el) => el.classList.remove("active"));
+  $("go").disabled = false;
+}
+
+async function poll() {
+  clearTimeout(state.timer);
+  if (!state.job) return;
+  let s;
+  try { s = await (await fetch("/api/jobs/" + state.job)).json(); } catch { state.timer = setTimeout(poll, 1500); return; }
+  $("p-time").textContent = Math.round(s.elapsed) + " วินาที";
+  $("log").textContent = s.logs.join("\n");
+  $("log").scrollTop = 1e9;
+  setStep(s.step);
+  // translation progress "... 127/329"
+  const last = [...s.logs].reverse().find((l) => /^\.\.\. \d+\/\d+/.test(l) || /translating \d+ segments/.test(l) || /from cache/.test(l));
+  if (last) {
+    const m = last.match(/(\d+)\/(\d+)/);
+    const m2 = last.match(/translating (\d+) segments/);
+    if (m) { $("t-bar").classList.add("show"); $("t-bar").firstElementChild.style.width = (100 * m[1] / m[2]) + "%"; $("t-desc").textContent = `แปลแล้ว ${m[1]} จาก ${m[2]} ข้อความ`; }
+    else if (m2) { $("t-bar").classList.add("show"); $("t-desc").textContent = `กำลังแปล ${m2[1]} ข้อความ…`; }
+  }
+  if (s.step === "error") return fail(s.error);
+  if (s.step === "done") { $("go").disabled = false; return result(s); }
+  state.timer = setTimeout(poll, 800);
+}
+
+// ---------- result
+function result(s) {
+  const r = s.report;
+  $("s-pages").textContent = r.pages;
+  $("s-tr").textContent = r.translated.toLocaleString();
+  $("s-kept").textContent = r.kept.toLocaleString();
+  $("s-issues").textContent = r.issues.length;
+  $("s-issues-box").classList.toggle("good", r.issues.length === 0);
+  const qa = $("qa");
+  if (r.issues.length) {
+    qa.className = "ok-pill warn-pill"; qa.textContent = `พบ ${r.issues.length} จุดที่ควรตรวจ`;
+    $("issues").classList.remove("hidden");
+    $("issues").innerHTML = "<b>จุดที่ควรตรวจ</b><br>" + r.issues.slice(0, 20).map((i) => `หน้า ${i.page}: ${i.kind} — ${escapeHtml(i.detail)}`).join("<br>");
+  } else { $("issues").classList.add("hidden"); }
+  $("download").href = `/api/jobs/${s.id}/download`;
+  state.pages = s.pages; state.page = 0;
+  show("result");
+  render();
+}
+const escapeHtml = (t) => t.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+function img(v, p) {
+  const el = new Image();
+  el.src = `/api/jobs/${state.job}/page/${p}?v=${v}`;
+  el.alt = v === "out" ? "คำแปล" : "ต้นฉบับ";
+  el.draggable = false;
+  return el;
+}
+function render() {
+  const bilingual = $("bilingual").checked;
+  const c = $("canvas");
+  c.innerHTML = "";
+  c.classList.toggle("zoom", state.zoom);
+  $("pnum").textContent = `${state.page + 1} / ${state.pages}`;
+  $("prev").disabled = state.page === 0;
+  $("next").disabled = state.page >= state.pages - 1;
+  const mode = bilingual && state.mode !== "src" ? "out" : state.mode;
+  document.querySelectorAll("#mode button").forEach((b) => b.disabled = bilingual && b.dataset.mode !== "out" && b.dataset.mode !== "src");
+  c.style.setProperty("--cut", state.cut + "%");
+  if (mode === "slide") {
+    const base = img("src", state.page);
+    const top = img("out", state.page); top.className = "top";
+    const h = document.createElement("div"); h.className = "handle";
+    const t1 = document.createElement("span"); t1.className = "tag l"; t1.textContent = "ต้นฉบับ";
+    const t2 = document.createElement("span"); t2.className = "tag r"; t2.textContent = "คำแปล";
+    c.append(base, top, h, t1, t2);
+    const move = (e) => {
+      const rect = c.getBoundingClientRect();
+      const x = (e.touches ? e.touches[0].clientX : e.clientX) - rect.left;
+      state.cut = Math.max(0, Math.min(100, (100 * x) / rect.width));
+      c.style.setProperty("--cut", state.cut + "%");
+    };
+    let dragging = false;
+    c.onmousedown = (e) => { dragging = true; move(e); };
+    window.onmousemove = (e) => dragging && move(e);
+    window.onmouseup = () => (dragging = false);
+    c.ontouchstart = move; c.ontouchmove = (e) => { e.preventDefault(); move(e); };
+  } else if (mode === "sbs") {
+    const w = document.createElement("div"); w.className = "sbs";
+    w.append(img("src", state.page), img("out", state.page));
+    c.append(w); c.onmousedown = c.ontouchstart = c.ontouchmove = null;
+  } else {
+    c.append(img(mode === "src" ? "src" : "out", state.page));
+    c.onmousedown = c.ontouchstart = c.ontouchmove = null;
+  }
+}
+document.querySelectorAll("#mode button").forEach((b) => b.onclick = () => {
+  state.mode = b.dataset.mode;
+  document.querySelectorAll("#mode button").forEach((x) => x.classList.toggle("on", x === b));
+  render();
+});
+$("zoom").onclick = () => { state.zoom = !state.zoom; $("zoom").textContent = state.zoom ? "พอดีจอ" : "ขยาย"; render(); };
+$("prev").onclick = () => { if (state.page > 0) { state.page--; render(); } };
+$("next").onclick = () => { if (state.page < state.pages - 1) { state.page++; render(); } };
+document.addEventListener("keydown", (e) => {
+  if ($("v-result").classList.contains("hidden") || e.target.matches("input,textarea,select")) return;
+  if (e.key === "ArrowRight") $("next").click();
+  if (e.key === "ArrowLeft") $("prev").click();
+});
+</script>
+</body>
+</html>

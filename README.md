@@ -28,15 +28,30 @@ cd editor-ff
 pip install -e ".[ocr]"
 ```
 
-## ใช้งาน
+## ใช้งานผ่านหน้าเว็บ (ง่ายที่สุด)
 
 ```bash
-# แปลด้วย Claude (คุณภาพดีที่สุด) — ต้องมี API key จาก https://console.anthropic.com
-export ANTHROPIC_API_KEY=sk-ant-...        # Windows: set ANTHROPIC_API_KEY=sk-ant-...
+pdf-translate-web
+```
+
+เบราว์เซอร์จะเปิด http://127.0.0.1:8765 ให้อัตโนมัติ (Windows: ดับเบิลคลิก `start-web.bat`, Mac/Linux: `./start-web.sh`)
+
+1. ลากไฟล์ PDF มาวาง
+2. เลือกภาษา และวิธีแปล — **Google (ฟรี ไม่ต้องใช้ key)** หรือ Claude (คุณภาพสูงสุด ใส่ API key)
+3. กด **แปลเอกสาร** → ดูความคืบหน้าทีละขั้น
+4. เลื่อนแถบเทียบต้นฉบับ/คำแปล แล้วกด **ดาวน์โหลด PDF**
+
+ทุกอย่างทำงานบนเครื่องของคุณ ไฟล์ PDF ไม่ถูกอัปโหลดไปที่อื่น (มีเพียงข้อความที่ส่งไปแปล)
+
+## ใช้งานผ่าน command line
+
+```bash
+# แปลฟรีด้วย Google (ค่าเริ่มต้น ไม่ต้องใช้ key)
 pdf-translate manual.pdf -o manual.en.pdf
 
-# แปลฟรีด้วย Google (ดูตัวอย่างเร็ว ๆ คุณภาพต่ำกว่า)
-pdf-translate manual.pdf -e google
+# แปลด้วย Claude (คุณภาพดีที่สุด) — ต้องมี API key จาก https://console.anthropic.com
+export ANTHROPIC_API_KEY=sk-ant-...        # Windows: set ANTHROPIC_API_KEY=sk-ant-...
+pdf-translate manual.pdf -e claude
 
 # จีน → ไทย, เฉพาะหน้า 1-3
 pdf-translate manual.pdf -t th -p 1-3
@@ -71,7 +86,7 @@ pdf-translate manual.pdf --glossary glossary.csv --notes "Audience: field techni
 | ตัวเลือก | ความหมาย |
 |---|---|
 | `-s / -t` | ภาษาต้นทาง / ปลายทาง (ค่าเริ่มต้น `zh` / `en`) |
-| `-e` | `claude` (ค่าเริ่มต้น), `google`, `file` |
+| `-e` | `google` (ค่าเริ่มต้น, ฟรี), `claude`, `file` |
 | `--model`, `--effort` | รุ่น Claude (ค่าเริ่มต้น `claude-opus-5`) และระดับความละเอียด `low`…`max` |
 | `-p` | หน้าที่จะแปล เช่น `1-3,5` |
 | `--ocr` | `auto` (ค่าเริ่มต้น: OCR เฉพาะหน้าที่ไม่มีข้อความจริง), `always`, `never` |
@@ -113,4 +128,4 @@ pytest
 ## หมายเหตุ
 
 - PyMuPDF ใช้สัญญาอนุญาต AGPL — ใช้ภายในองค์กรได้ ถ้าจะนำไปจำหน่าย/ให้บริการต้องซื้อ license เชิงพาณิชย์ของ PyMuPDF
-- `--engine google` ใช้ endpoint สาธารณะของ Google Translate ที่ไม่เป็นทางการ อาจถูกจำกัดการใช้งาน
+- `-e google` ใช้ช่องทางเดียวกับเว็บ Google Translate — ฟรี ไม่ต้องสมัคร แต่เป็นช่องทางไม่เป็นทางการ ถ้าแปลปริมาณมากอาจถูกจำกัดชั่วคราว

@@ -22,9 +22,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "-e",
         "--engine",
-        default="claude",
-        choices=["claude", "google", "file"],
-        help="claude = best quality (needs ANTHROPIC_API_KEY); google = free preview; "
+        default="google",
+        choices=["google", "claude", "file"],
+        help="google = free, no key needed (default); claude = best quality (needs ANTHROPIC_API_KEY); "
         "file = use translations from --translations JSON",
     )
     p.add_argument("--model", help="Claude model id (default: claude-opus-5)")

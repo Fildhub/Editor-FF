@@ -29,7 +29,7 @@ def default_cache_dir() -> Path:
 class Options:
     source_lang: str = "zh"
     target_lang: str = "en"
-    engine: str = "claude"
+    engine: str = "google"
     model: Optional[str] = None
     effort: str = "medium"
     pages: Optional[str] = None  # "1-3,5"
