@@ -1,0 +1,782 @@
+<title>PDF Translator</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+/* Layout: settings card on the left, workspace (progress -> side-by-side page preview) on the right; stacks on phones. */
+:root {
+  --bg: #f3f4f8;
+  --surface: #ffffff;
+  --surface-2: #f7f8fb;
+  --line: #e2e5ee;
+  --line-strong: #cdd2df;
+  --ink: #141a2e;
+  --ink-2: #4a5270;
+  --ink-3: #8a91a8;
+  --accent: #3b5bfd;
+  --accent-ink: #ffffff;
+  --accent-soft: #eceffe;
+  --violet: #6a4cff;
+  --ok: #0f9d63;
+  --ok-soft: #e4f6ee;
+  --warn: #b86e00;
+  --warn-soft: #fff3df;
+  --err: #d6352b;
+  --err-soft: #fdecea;
+  --shadow: 0 1px 2px rgba(20, 26, 46, .05), 0 10px 28px -12px rgba(20, 26, 46, .18);
+  --font: "IBM Plex Sans Thai", system-ui, -apple-system, "Segoe UI", "Noto Sans Thai", sans-serif;
+  --mono: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0c0f18; --surface: #141925; --surface-2: #10141e; --line: #242b3b; --line-strong: #323b4f;
+    --ink: #edf0f7; --ink-2: #aab2c7; --ink-3: #6f7890; --accent: #7088ff; --accent-ink: #0c0f18;
+    --accent-soft: #1b2244; --violet: #9a86ff; --ok: #3ccf8e; --ok-soft: #10281f; --warn: #f0a53a;
+    --warn-soft: #2c2210; --err: #ff6b61; --err-soft: #2e1413;
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 10px 28px -12px rgba(0,0,0,.7);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0c0f18; --surface: #141925; --surface-2: #10141e; --line: #242b3b; --line-strong: #323b4f;
+  --ink: #edf0f7; --ink-2: #aab2c7; --ink-3: #6f7890; --accent: #7088ff; --accent-ink: #0c0f18;
+  --accent-soft: #1b2244; --violet: #9a86ff; --ok: #3ccf8e; --ok-soft: #10281f; --warn: #f0a53a;
+  --warn-soft: #2c2210; --err: #ff6b61; --err-soft: #2e1413;
+  --shadow: 0 1px 2px rgba(0,0,0,.4), 0 10px 28px -12px rgba(0,0,0,.7);
+  color-scheme: dark;
+}
+html, body { margin: 0; }
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body { background: var(--bg); color: var(--ink); font-family: var(--font); font-size: 15px; line-height: 1.55; }
+button, input, select { font: inherit; color: inherit; }
+.wrap { max-width: 1240px; margin: 0 auto; padding-inline: 16px; padding-block: 18px 40px; }
+
+header { display: flex; align-items: center; gap: 14px; padding-block: 6px 22px; }
+header img { width: 46px; height: 46px; flex: none; }
+header h1 { margin: 0; font-size: 20px; line-height: 1.2; letter-spacing: -.01em; text-wrap: balance; }
+header p { margin: 2px 0 0; color: var(--ink-2); font-size: 13.5px; }
+
+.grid { display: grid; grid-template-columns: minmax(0, 360px) minmax(0, 1fr); gap: 18px; align-items: start; }
+@media (max-width: 900px) { .grid { grid-template-columns: minmax(0, 1fr); } }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; box-shadow: var(--shadow); }
+.settings { padding: 20px; display: grid; gap: 18px; }
+.lbl { font-size: 13px; font-weight: 600; color: var(--ink-2); margin-bottom: 8px; }
+
+.drop { display: grid; justify-items: center; gap: 4px; text-align: center; padding: 22px 14px; border: 1.5px dashed var(--line-strong);
+  border-radius: 14px; background: var(--surface-2); cursor: pointer; transition: background .15s, border-color .15s; }
+.drop:hover, .drop.drag, .drop:focus-within { border-color: var(--accent); background: var(--accent-soft); }
+.drop svg { color: var(--accent); }
+.drop b { font-weight: 600; }
+.drop span { color: var(--ink-3); font-size: 12.5px; }
+.chip { display: flex; align-items: center; gap: 12px; padding: 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface-2); }
+.chip .pdf { width: 36px; height: 42px; border-radius: 8px; background: var(--err-soft); color: var(--err); display: grid; place-items: center; font-size: 11px; font-weight: 700; flex: none; }
+.chip .meta { min-width: 0; flex: 1; }
+.chip .name { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.chip .sub { color: var(--ink-3); font-size: 12.5px; }
+.linkbtn { background: none; border: 0; color: var(--accent); font-weight: 600; font-size: 13px; cursor: pointer; padding: 4px; }
+
+.langs { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); gap: 8px; align-items: center; }
+select { width: 100%; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface); }
+select:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.arrow { color: var(--ink-3); }
+.hint { color: var(--ink-3); font-size: 12.5px; margin-top: 6px; }
+
+.primary { width: 100%; padding: 13px 16px; border: 0; border-radius: 12px; cursor: pointer; font-weight: 600; font-size: 15.5px;
+  background: linear-gradient(135deg, var(--accent), var(--violet)); color: #fff; display: flex; justify-content: center; align-items: center; gap: 10px;
+  box-shadow: 0 8px 18px -10px var(--accent); }
+.primary:disabled { opacity: .45; cursor: not-allowed; box-shadow: none; }
+.primary:not(:disabled):hover { filter: brightness(1.06); }
+.stopbtn { width: 100%; padding: 10px; border-radius: 12px; border: 1px solid var(--line); background: var(--surface); cursor: pointer; font-weight: 600; color: var(--ink-2); }
+
+.note { font-size: 12.8px; color: var(--ink-2); background: var(--surface-2); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; }
+.note b { color: var(--ink); }
+
+.stage { padding: 22px; min-height: 520px; min-width: 0; }
+.empty { display: grid; gap: 22px; align-content: center; min-height: 480px; }
+.empty h2 { margin: 0; font-size: 22px; text-wrap: balance; }
+.empty p { margin: 6px 0 0; color: var(--ink-2); max-width: 60ch; }
+.how { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+@media (max-width: 640px) { .how { grid-template-columns: minmax(0, 1fr); } }
+.how div { border: 1px solid var(--line); background: var(--surface-2); border-radius: 12px; padding: 14px; }
+.how .n { width: 26px; height: 26px; border-radius: 50%; background: var(--accent-soft); color: var(--accent); display: grid; place-items: center; font-weight: 700; font-size: 13px; }
+.how b { display: block; margin-top: 8px; font-size: 14px; }
+.how span { color: var(--ink-2); font-size: 13px; }
+.demo { border: 1px solid var(--line); border-radius: 12px; overflow: hidden; display: grid; grid-template-columns: 1fr 1fr; }
+.demo div { padding: 14px; font-size: 12.5px; }
+.demo div + div { border-left: 1px solid var(--line); background: var(--accent-soft); }
+.demo i { display: block; font-style: normal; font-size: 11px; font-weight: 700; letter-spacing: .06em; color: var(--ink-3); margin-bottom: 6px; }
+.demo table { width: 100%; border-collapse: collapse; }
+.demo td { border: 1px solid var(--line-strong); padding: 3px 6px; font-size: 12px; }
+
+.phead { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.phead h2 { margin: 0; font-size: 18px; }
+.muted { color: var(--ink-2); font-size: 13.5px; font-variant-numeric: tabular-nums; }
+.steps { display: grid; gap: 10px; margin-block: 18px; }
+.step { display: flex; gap: 14px; align-items: center; padding: 13px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface-2); }
+.step .dot { width: 30px; height: 30px; border-radius: 50%; border: 2px solid var(--line-strong); display: grid; place-items: center; color: var(--ink-3); font-weight: 700; font-size: 13px; flex: none; }
+.step .t { font-weight: 600; }
+.step .d { font-size: 13px; color: var(--ink-2); }
+.step.on { border-color: var(--accent); background: var(--accent-soft); }
+.step.on .dot { border-color: var(--accent); color: transparent; position: relative; }
+.step.on .dot::after { content: ""; position: absolute; width: 12px; height: 12px; border: 2px solid var(--accent); border-right-color: transparent; border-radius: 50%; animation: spin .8s linear infinite; }
+.step.done .dot { background: var(--ok); border-color: var(--ok); color: #fff; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .step.on .dot::after { animation: none; } }
+.bar { height: 6px; border-radius: 99px; background: var(--line); overflow: hidden; margin-top: 8px; }
+.bar i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, var(--accent), var(--violet)); transition: width .4s; }
+.msg { margin-top: 14px; border-radius: 12px; padding: 14px 16px; font-size: 14px; }
+.msg.err { background: var(--err-soft); border: 1px solid var(--err); }
+.msg.err b { color: var(--err); }
+.msg.warn { background: var(--warn-soft); border: 1px solid var(--warn); }
+
+.rtop { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+.rtop h2 { margin: 0; font-size: 20px; }
+.pill { display: inline-flex; align-items: center; gap: 6px; padding: 4px 11px; border-radius: 99px; font-size: 13px; font-weight: 600; background: var(--ok-soft); color: var(--ok); }
+.spacer { flex: 1; }
+.dl { display: inline-flex; align-items: center; gap: 8px; padding: 10px 16px; border-radius: 11px; border: 0; cursor: pointer; font-weight: 600; background: var(--ink); color: var(--surface); }
+.ghost { display: inline-flex; align-items: center; gap: 8px; padding: 10px 14px; border-radius: 11px; border: 1px solid var(--line); background: var(--surface); cursor: pointer; font-weight: 600; }
+.stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-block: 16px; }
+.stat { border: 1px solid var(--line); background: var(--surface-2); border-radius: 12px; padding: 12px 14px; }
+.stat b { display: block; font-size: 22px; font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
+.stat span { font-size: 12.5px; color: var(--ink-2); }
+.vbar { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+.pager { display: inline-flex; align-items: center; gap: 6px; margin-left: auto; }
+.pager button { width: 34px; height: 34px; border-radius: 9px; border: 1px solid var(--line); background: var(--surface); cursor: pointer; display: grid; place-items: center; }
+.pager button:disabled { opacity: .4; cursor: default; }
+.pager span { min-width: 64px; text-align: center; font-variant-numeric: tabular-nums; color: var(--ink-2); font-size: 13.5px; }
+.pages { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+@media (max-width: 640px) { .pages { grid-template-columns: minmax(0, 1fr); } }
+.pages figure { margin: 0; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: var(--surface-2); }
+.pages figcaption { font-size: 12px; font-weight: 700; letter-spacing: .05em; color: var(--ink-3); padding: 8px 12px; border-bottom: 1px solid var(--line); }
+.pages figcaption.tr { color: var(--accent); }
+.pages canvas { display: block; width: 100%; height: auto; background: #fff; }
+.saved { font-size: 13px; color: var(--ok); }
+</style>
+
+<div class="wrap">
+  <header>
+    <img src="__ICON__" alt="">
+    <div>
+      <h1>PDF Translator</h1>
+      <p>ดับเบิลคลิกเปิดไฟล์นี้ แล้วแปลได้เลย · ตำแหน่ง ตาราง และรูปอยู่ที่เดิม</p>
+    </div>
+  </header>
+
+  <div class="grid">
+    <section class="card settings" aria-label="ตั้งค่า">
+      <div>
+        <div class="lbl">1. เลือกไฟล์ PDF</div>
+        <label class="drop" id="drop">
+          <input type="file" id="file" accept="application/pdf,.pdf" hidden>
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4m0 0-4 4m4-4 4 4"/><path d="M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>
+          <b>กดเพื่อเลือกไฟล์ หรือลากมาวาง</b>
+          <span>ไฟล์อยู่ในเครื่องคุณ ไม่ถูกอัปโหลดที่ไหน</span>
+        </label>
+        <div class="chip" id="chip" hidden>
+          <div class="pdf">PDF</div>
+          <div class="meta"><div class="name" id="fname"></div><div class="sub" id="fsub"></div></div>
+          <button class="linkbtn" id="change" type="button">เปลี่ยน</button>
+        </div>
+      </div>
+
+      <div>
+        <div class="lbl">2. ภาษา</div>
+        <div class="langs">
+          <select id="src" aria-label="ภาษาต้นฉบับ">
+            <option value="zh" selected>จีน</option>
+            <option value="ja">ญี่ปุ่น</option>
+            <option value="ko">เกาหลี</option>
+            <option value="th">ไทย</option>
+            <option value="ru">รัสเซีย</option>
+            <option value="any">อื่น ๆ (ตรวจอัตโนมัติ)</option>
+          </select>
+          <svg class="arrow" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+          <select id="tgt" aria-label="แปลเป็น">
+            <option value="English" selected>อังกฤษ</option>
+            <option value="French">ฝรั่งเศส</option>
+            <option value="German">เยอรมัน</option>
+            <option value="Spanish">สเปน</option>
+            <option value="Italian">อิตาลี</option>
+            <option value="Portuguese">โปรตุเกส</option>
+            <option value="Indonesian">อินโดนีเซีย</option>
+            <option value="Malay">มลายู</option>
+          </select>
+        </div>
+        <div class="hint">แปลเป็นภาษาอักษรโรมันได้ (เช่น อังกฤษ)</div>
+      </div>
+
+      <button class="primary" id="go" type="button" disabled>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+        แปลเอกสาร
+      </button>
+      <button class="stopbtn" id="stop" type="button" hidden>หยุด</button>
+
+      <div class="note">
+        <b>แปลด้วย Google Translate ฟรี</b> ไม่ต้องสมัคร ไม่ต้องติดตั้ง · ต้องต่ออินเทอร์เน็ต<br>
+        ใช้ได้กับ PDF ที่มีตัวอักษรจริง (ลากคลุมข้อความได้) · PDF สแกนหรือตัวอักษรที่เป็นภาพ ยังแปลในไฟล์นี้ไม่ได้
+      </div>
+    </section>
+
+    <main class="card stage" id="stage">
+      <section class="empty" id="v-empty">
+        <div>
+          <h2>แปลแล้วหน้าตาเหมือนเดิม</h2>
+          <p>ระบบอ่านข้อความทุกย่อหน้าและทุกช่องตาราง แปลด้วย Google Translate แล้ววางคำแปลลงตำแหน่งเดิมด้วยขนาดที่พอดีช่อง</p>
+        </div>
+        <div class="demo" aria-hidden="true">
+          <div><i>ต้นฉบับ</i>
+            <table><tr><td>额定转矩</td><td>N.m</td><td>0.32</td></tr><tr><td>最高转速</td><td>r/min</td><td>5000</td></tr></table>
+          </div>
+          <div><i>คำแปล</i>
+            <table><tr><td>Rated torque</td><td>N.m</td><td>0.32</td></tr><tr><td>Max. speed</td><td>r/min</td><td>5000</td></tr></table>
+          </div>
+        </div>
+        <div class="how">
+          <div><div class="n">1</div><b>เลือกไฟล์</b><span>PDF จากเครื่องของคุณ</span></div>
+          <div><div class="n">2</div><b>กดแปล</b><span>ดูความคืบหน้าทีละขั้น</span></div>
+          <div><div class="n">3</div><b>ดาวน์โหลด</b><span>เทียบต้นฉบับกับคำแปลก่อนบันทึก</span></div>
+        </div>
+      </section>
+
+      <section id="v-work" hidden>
+        <div class="phead"><h2 id="w-title">กำลังแปล…</h2><span class="muted" id="w-time"></span></div>
+        <div class="steps">
+          <div class="step" id="s1"><div class="dot">1</div><div><div class="t">อ่านเอกสาร</div><div class="d" id="s1d">หาข้อความ ย่อหน้า และช่องตาราง</div></div></div>
+          <div class="step" id="s2"><div class="dot">2</div><div style="flex:1;min-width:0"><div class="t">แปลด้วย Google Translate</div><div class="d" id="s2d">แปลทีละข้อความตามลำดับการอ่าน</div><div class="bar"><i id="s2bar"></i></div></div></div>
+          <div class="step" id="s3"><div class="dot">3</div><div><div class="t">วางคำแปลลงหน้าเดิม</div><div class="d">ปรับขนาดตัวอักษรให้พอดีช่อง</div></div></div>
+        </div>
+        <div id="w-msg"></div>
+      </section>
+
+      <section id="v-result" hidden>
+        <div class="rtop">
+          <h2>แปลเสร็จแล้ว</h2>
+          <span class="pill"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 5 5L20 7"/></svg><span id="r-pill"></span></span>
+          <span class="spacer"></span>
+          <button class="ghost" id="again" type="button">แปลไฟล์ใหม่</button>
+          <button class="dl" id="download" type="button">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v12m0 0-4-4m4 4 4-4M4 20h16"/></svg>
+            ดาวน์โหลด PDF
+          </button>
+        </div>
+        <div class="saved" id="saved"></div>
+        <div class="stats">
+          <div class="stat"><b id="r-pages">–</b><span>หน้า</span></div>
+          <div class="stat"><b id="r-blocks">–</b><span>ข้อความที่แปล</span></div>
+          <div class="stat"><b id="r-small">–</b><span>ช่องที่ย่อตัวอักษรให้พอดี</span></div>
+        </div>
+        <div class="vbar">
+          <span class="muted">เทียบต้นฉบับกับคำแปล</span>
+          <div class="pager">
+            <button id="prev" type="button" aria-label="หน้าก่อน"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="m15 18-6-6 6-6"/></svg></button>
+            <span id="pnum">1 / 1</span>
+            <button id="next" type="button" aria-label="หน้าถัดไป"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="m9 18 6-6-6-6"/></svg></button>
+          </div>
+        </div>
+        <div class="pages">
+          <figure><figcaption>ต้นฉบับ</figcaption><canvas id="cv-src"></canvas></figure>
+          <figure><figcaption class="tr">คำแปล</figcaption><canvas id="cv-out"></canvas></figure>
+        </div>
+        <div id="r-msg"></div>
+      </section>
+    </main>
+  </div>
+</div>
+
+<script type="application/json" id="cmaps">__CMAPDATA__</script>
+<script src="__PDFJS__"></script>
+<script src="__PDFJS_WORKER__"></script>
+<script src="__PDFLIB__"></script>
+<script>
+(() => {
+"use strict";
+const $ = (id) => document.getElementById(id);
+const S = { file: null, bytes: null, out: null, page: 0, pages: 0, ctl: null, t0: 0, timer: null };
+
+// ------------------------------------------------------------------ scripts
+const CJK = /[㐀-䶿一-鿿豈-﫿]/;
+const SRC_RE = {
+  zh: CJK,
+  ja: /[぀-ヿ㐀-䶿一-鿿]/,
+  ko: /[가-힯ᄀ-ᇿ]/,
+  th: /[฀-๿]/,
+  ru: /[Ѐ-ӿ]/,
+  any: /[^\W\d_]{2,}/u,
+};
+const NOSPACE = /[　-ヿ㐀-鿿가-힯＀-￯฀-๿]/;
+
+// ------------------------------------------------------------------ file choice
+function fmtSize(n) { return n > 1048576 ? (n / 1048576).toFixed(1) + " MB" : Math.max(1, Math.round(n / 1024)) + " KB"; }
+async function pick(f) {
+  if (!f) return;
+  if (!/\.pdf$/i.test(f.name) && f.type !== "application/pdf") { showMsg("w-msg", "err", "ไฟล์นี้ไม่ใช่ PDF", "เลือกไฟล์ที่ลงท้ายด้วย .pdf"); return; }
+  S.file = f;
+  S.bytes = new Uint8Array(await f.arrayBuffer());
+  $("fname").textContent = f.name;
+  $("fsub").textContent = fmtSize(f.size);
+  $("drop").hidden = true; $("chip").hidden = false;
+  $("go").disabled = false;
+}
+$("file").addEventListener("change", (e) => pick(e.target.files[0]));
+$("change").addEventListener("click", () => { $("file").value = ""; $("file").click(); });
+const drop = $("drop");
+["dragenter", "dragover"].forEach((t) => drop.addEventListener(t, (e) => { e.preventDefault(); drop.classList.add("drag"); }));
+["dragleave", "drop"].forEach((t) => drop.addEventListener(t, (e) => { e.preventDefault(); drop.classList.remove("drag"); }));
+drop.addEventListener("drop", (e) => pick(e.dataTransfer.files[0]));
+document.addEventListener("dragover", (e) => e.preventDefault());
+document.addEventListener("drop", (e) => { e.preventDefault(); if (e.dataTransfer.files[0]) pick(e.dataTransfer.files[0]); });
+
+// ------------------------------------------------------------------ views
+function view(name) { for (const v of ["empty", "work", "result"]) $("v-" + v).hidden = v !== name; }
+function step(n, state) { const el = $("s" + n); el.classList.toggle("on", state === "on"); el.classList.toggle("done", state === "done"); }
+function showMsg(where, kind, title, body) {
+  const box = $(where);
+  box.innerHTML = "";
+  if (!title) return;
+  const d = document.createElement("div"); d.className = "msg " + kind;
+  const b = document.createElement("b"); b.textContent = title;
+  const p = document.createElement("div"); p.textContent = body || "";
+  d.append(b, p); box.append(d);
+}
+function tick() { $("w-time").textContent = Math.round((performance.now() - S.t0) / 1000) + " วินาที"; }
+
+// Character maps for CJK fonts that are not embedded in the PDF. The page
+// cannot download them, so they ship inside it (packed, base64).
+const CMAPS = JSON.parse(document.getElementById("cmaps").textContent);
+class EmbeddedCMaps {
+  constructor() {}
+  async fetch({ name }) {
+    const b64 = CMAPS[name];
+    if (!b64) throw new Error("Missing character map " + name);
+    return { cMapData: Uint8Array.from(atob(b64), (c) => c.charCodeAt(0)), compressionType: pdfjsLib.CMapCompressionType.BINARY };
+  }
+}
+
+// ------------------------------------------------------------------ 1. read the PDF
+async function fontNameOf(page, id) {
+  try { const f = page.commonObjs.get(id); return (f && (f.name || f.loadedName)) || ""; } catch { return ""; }
+}
+
+async function analyse(pdf, srcRe) {
+  const pages = [];
+  for (let p = 1; p <= pdf.numPages; p++) {
+    const page = await pdf.getPage(p);
+    const tc = await page.getTextContent();
+    try { await page.getOperatorList(); } catch {}
+    const items = [];
+    for (const it of tc.items) {
+      if (!it.str || !it.str.trim()) continue;
+      const [a, b, c, d, e, f] = it.transform;
+      if (Math.abs(b) > 0.01 || Math.abs(c) > 0.01 || a <= 0) continue;  // rotated text is left as is
+      const size = Math.abs(d) || Math.hypot(c, d);
+      if (size < 2) continue;
+      const fname = await fontNameOf(page, it.fontName);
+      items.push({ str: it.str, x0: e, x1: e + Math.max(it.width, 0.3 * size), base: f, size,
+        bold: /bold|black|heavy|semibold|demi|[-,]b$/i.test(fname) && !/light/i.test(fname) });
+    }
+    const lines = groupLines(items);
+    const blocks = groupBlocks(lines);
+    pages.push({ page, view: page.view, rotate: page.rotate, blocks, chars: items.reduce((n, i) => n + i.str.length, 0) });
+  }
+  for (const pg of pages) {
+    for (const bl of pg.blocks) bl.translate = srcRe.test(bl.text);
+    measureSpace(pg);
+  }
+  return pages;
+}
+
+function joinText(a, b, gap, size) {
+  if (!a) return b;
+  const last = a[a.length - 1], first = b[0];
+  if (NOSPACE.test(last) || NOSPACE.test(first)) return a + b;
+  if (/-$/.test(a) && /^[a-z]/.test(b)) return a.slice(0, -1) + b;
+  return a + ((gap === undefined || gap > 0.15 * size) && !/\s$/.test(a) && !/^\s/.test(b) ? " " : "") + b;
+}
+
+function groupLines(items) {
+  items.sort((p, q) => q.base - p.base || p.x0 - q.x0);
+  const lines = [];
+  for (const it of items) {
+    let host = null;
+    for (const ln of lines) {
+      if (Math.abs(ln.base - it.base) > 0.35 * Math.max(ln.size, it.size)) continue;
+      if (Math.max(ln.size, it.size) / Math.min(ln.size, it.size) > 1.35) continue;
+      const gap = it.x0 - ln.x1;
+      if (gap < -0.6 * it.size || gap > 1.3 * Math.max(ln.size, it.size)) continue;
+      host = ln; break;
+    }
+    if (host) {
+      host.text = joinText(host.text, it.str, it.x0 - host.x1, host.size);
+      host.x1 = Math.max(host.x1, it.x1);
+      host.bold = host.bold && it.bold;
+      host.n += 1;
+    } else {
+      lines.push({ text: it.str, x0: it.x0, x1: it.x1, base: it.base, size: it.size, bold: it.bold, n: 1 });
+    }
+  }
+  for (const ln of lines) { ln.text = ln.text.trim(); ln.top = ln.base + 0.88 * ln.size; ln.bottom = ln.base - 0.24 * ln.size; }
+  return lines.filter((l) => l.text);
+}
+
+const BULLET = /^\s*([·•・●○◆■□▪※*\-–]|[①-⑳]|\(?\d{1,2}[.)、．]|[（(][0-9一二三四五六七八九十]{1,3}[)）])/;
+
+function groupBlocks(lines) {
+  lines.sort((p, q) => q.top - p.top || p.x0 - q.x0);
+  const blocks = [];
+  for (const ln of lines) {
+    let host = null;
+    if (!BULLET.test(ln.text)) {
+      for (const bl of blocks) {
+        const last = bl.lines[bl.lines.length - 1];
+        const size = Math.max(last.size, ln.size);
+        const gap = last.bottom - ln.top;
+        if (gap < -0.25 * size || gap > 0.7 * size) continue;
+        if (Math.max(last.size, ln.size) / Math.min(last.size, ln.size) > 1.2) continue;
+        if (last.bold !== ln.bold) continue;
+        if (Math.min(last.x1, ln.x1) - Math.max(last.x0, ln.x0) <= 0) continue;
+        if (Math.abs(ln.x0 - bl.lines[bl.lines.length > 1 ? 1 : 0].x0) > 1.5 * size && !(bl.lines.length === 1 && ln.x0 < last.x0)) continue;
+        if (/[：:]$/.test(last.text)) continue;
+        host = bl; break;
+      }
+    }
+    if (host) {
+      const last = host.lines[host.lines.length - 1];
+      host.lines.push(ln);
+      host.text = joinText(host.text, ln.text);
+      host.x0 = Math.min(host.x0, ln.x0); host.x1 = Math.max(host.x1, ln.x1); host.bottom = ln.bottom;
+      void last;
+    } else {
+      blocks.push({ lines: [ln], text: ln.text, x0: ln.x0, x1: ln.x1, top: ln.top, bottom: ln.bottom, size: ln.size, bold: ln.bold });
+    }
+  }
+  for (const bl of blocks) {
+    const s = bl.lines.map((l) => l.size).sort((a, b) => a - b);
+    bl.size = s[s.length >> 1];
+  }
+  return blocks;
+}
+
+// free space each translation may use (never reaching another block)
+function measureSpace(pg) {
+  const [vx0, vy0, vx1, vy1] = pg.view;
+  const bls = pg.blocks;
+  const contentL = Math.min(...bls.map((b) => b.x0), vx1), contentR = Math.max(...bls.map((b) => b.x1), vx0);
+  const marginR = Math.max(contentR, vx1 - 36), marginL = Math.min(contentL, vx0 + 36);
+  for (const bl of bls) {
+    const h = bl.top - bl.bottom;
+    let right = marginR, left = marginL, below = vy0 + 24;
+    for (const o of bls) {
+      if (o === bl) continue;
+      const yOverlap = Math.min(o.top, bl.top) - Math.max(o.bottom, bl.bottom);
+      if (yOverlap > 0.2 * Math.min(h, o.top - o.bottom)) {
+        if (o.x0 >= bl.x1 - 0.5) right = Math.min(right, o.translate ? (bl.x1 + o.x0) / 2 : o.x0 - 2);
+        else if (o.x1 <= bl.x0 + 0.5) left = Math.max(left, o.translate ? (bl.x0 + o.x1) / 2 : o.x1 + 2);
+      }
+    }
+    right = Math.max(right, bl.x1); left = Math.min(left, bl.x0);
+    for (const o of bls) {
+      if (o === bl || o.top > bl.bottom + 0.5) continue;
+      if (Math.min(o.x1, right) - Math.max(o.x0, bl.x0) <= 0) continue;
+      below = Math.max(below, o.translate ? (bl.bottom + o.top) / 2 : o.top + 1.5);
+    }
+    bl.right = right; bl.left = left;
+    bl.floor = Math.min(bl.bottom, below);
+    const W = right - bl.x0, H = bl.top - bl.floor;
+    bl.budget = Math.max(4, Math.floor(W / (bl.size * 0.5))) * Math.max(1, Math.floor(H / (bl.size * 1.18)));
+    const lg = bl.x0 - left, rg = right - bl.x1;
+    bl.center = bl.lines.length === 1 && lg > 6 * bl.size && rg > 6 * bl.size && Math.abs(lg - rg) < Math.max(0.1 * (right - left), bl.size);
+  }
+}
+
+// ------------------------------------------------------------------ 3. typeset
+const LATIN1 = { "‘": "'", "’": "'", "“": '"', "”": '"', "–": "-", "—": "-", "…": "...", "℃": "°C", "Ω": "Ohm", "□": "", " ": " " };
+function latin1(s) {
+  let out = "";
+  for (const ch of s.normalize("NFC")) {
+    const c = ch.codePointAt(0);
+    if (LATIN1[ch] !== undefined) out += LATIN1[ch];
+    else if (c >= 0x2460 && c <= 0x2473) out += "(" + (c - 0x245f) + ")";
+    else if (c === 10 || (c >= 32 && c <= 126) || (c >= 160 && c <= 255)) out += ch;
+    else if (c >= 0x2000 && c <= 0x206f) out += " ";
+  }
+  return out.replace(/[ \t]+/g, " ").trim();
+}
+
+function wrap(text, font, size, width) {
+  const lines = [];
+  for (const para of text.split("\n")) {
+    let cur = "";
+    for (const word of para.split(/\s+/).filter(Boolean)) {
+      const t = cur ? cur + " " + word : word;
+      if (font.widthOfTextAtSize(t, size) <= width || !cur) { cur = t; }
+      else { lines.push(cur); cur = word; }
+    }
+    lines.push(cur);
+  }
+  const widest = Math.max(...lines.map((l) => font.widthOfTextAtSize(l, size)));
+  return { lines, widest };
+}
+
+function fit(bl, text, font) {
+  const W = bl.right - bl.x0 - 0.5, H = bl.top - bl.floor, s0 = bl.size;
+  const ok = (s) => { const w = wrap(text, font, s, W); return w.widest <= W + 0.01 && w.lines.length * s * 1.17 <= H + 0.3 * s ? w : null; };
+  if (bl.lines.length === 1 && !text.includes("\n")) {           // keep one-liners on one line if possible
+    const s1 = Math.min(s0, s0 * W / Math.max(1, font.widthOfTextAtSize(text, s0)));
+    if (s1 >= 0.78 * s0) return { size: s1, lines: [text] };
+  }
+  for (let s = s0; s >= Math.max(3, s0 * 0.4); s *= 0.96) { const w = ok(s); if (w) return { size: s, lines: w.lines }; }
+  const s = Math.max(3, s0 * 0.4);
+  return { size: s, lines: wrap(text, font, s, W).lines };
+}
+
+function sampleColors(ctx, vp, bl, pad) {
+  // background = the most common colour on a ring around the block; text colour = the darkest pixels inside
+  const [ax, ay] = vp.convertToViewportPoint(bl.x0 - pad, bl.top + pad);
+  const [bx, by] = vp.convertToViewportPoint(bl.x1 + pad, bl.bottom - pad);
+  const x0 = Math.max(0, Math.floor(Math.min(ax, bx))), y0 = Math.max(0, Math.floor(Math.min(ay, by)));
+  const x1 = Math.min(ctx.canvas.width - 1, Math.ceil(Math.max(ax, bx))), y1 = Math.min(ctx.canvas.height - 1, Math.ceil(Math.max(ay, by)));
+  if (x1 - x0 < 2 || y1 - y0 < 2) return { bg: [1, 1, 1], fg: [0, 0, 0] };
+  const img = ctx.getImageData(x0, y0, x1 - x0 + 1, y1 - y0 + 1).data;
+  const w = x1 - x0 + 1, h = y1 - y0 + 1;
+  const counts = new Map(); let dark = [];
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const i = (y * w + x) * 4, r = img[i], g = img[i + 1], b = img[i + 2];
+    if (x === 0 || y === 0 || x === w - 1 || y === h - 1) {
+      const k = (r >> 4) << 8 | (g >> 4) << 4 | (b >> 4);
+      const e = counts.get(k) || [0, 0, 0, 0]; e[0]++; e[1] += r; e[2] += g; e[3] += b; counts.set(k, e);
+    }
+    dark.push([r + g + b, r, g, b]);
+  }
+  let best = [0, 255, 255, 255];
+  for (const e of counts.values()) if (e[0] > best[0]) best = e;
+  const bg = best[0] ? [best[1] / best[0] / 255, best[2] / best[0] / 255, best[3] / best[0] / 255] : [1, 1, 1];
+  dark.sort((p, q) => p[0] - q[0]);
+  const top = dark.slice(0, Math.max(1, Math.floor(dark.length * 0.04)));
+  const fg = [0, 1, 2].map((k) => top.reduce((s, p) => s + p[k + 1], 0) / top.length / 255);
+  const lum = (c) => 0.3 * c[0] + 0.59 * c[1] + 0.11 * c[2];
+  return { bg, fg: Math.abs(lum(fg) - lum(bg)) < 0.25 ? (lum(bg) > 0.5 ? [0, 0, 0] : [1, 1, 1]) : fg };
+}
+
+// Table borders are drawn, not text: find them on the rendered page and
+// keep each translation inside its own cell.
+function ruleLimits(ctx, vp, bl, bg) {
+  const W = ctx.canvas.width, Hc = ctx.canvas.height;
+  const [ax, ay] = vp.convertToViewportPoint(bl.x1, bl.top);
+  const [bx, by] = vp.convertToViewportPoint(bl.right, bl.bottom);
+  const [cx] = vp.convertToViewportPoint(bl.x0, bl.top);
+  const [, fy] = vp.convertToViewportPoint(bl.x0, bl.floor);
+  const x0 = Math.max(0, Math.round(Math.min(cx, ax))), xr = Math.min(W - 1, Math.round(Math.max(ax, bx)));
+  const yt = Math.max(0, Math.round(Math.min(ay, by))), yb = Math.min(Hc - 1, Math.round(Math.max(ay, by)));
+  const yf = Math.min(Hc - 1, Math.round(fy));
+  if (xr - x0 < 2 || yb - yt < 2) return;
+  const bgc = bg.map((v) => v * 255);
+  const inkAt = (d, i) => Math.max(Math.abs(d[i] - bgc[0]), Math.abs(d[i + 1] - bgc[1]), Math.abs(d[i + 2] - bgc[2])) > 70;
+  const s = vp.scale;
+  // a vertical rule to the right, spanning the text's height
+  const startX = Math.min(xr, Math.round(ax) + 2);
+  if (xr > startX) {
+    const d = ctx.getImageData(startX, yt, xr - startX + 1, yb - yt + 1).data, w = xr - startX + 1, h = yb - yt + 1;
+    for (let x = 0; x < w; x++) {
+      let n = 0; for (let y = 0; y < h; y++) if (inkAt(d, (y * w + x) * 4)) n++;
+      if (n >= 0.85 * h) { bl.right = Math.max(bl.x1, bl.right - (w - x) / s - 1); break; }
+    }
+  }
+  // a horizontal rule below, spanning the text's width
+  const startY = Math.min(yf, yb + 2);
+  if (yf > startY) {
+    const [rx] = vp.convertToViewportPoint(bl.right, bl.top);
+    const xx1 = Math.min(W - 1, Math.round(rx)), w = xx1 - x0 + 1, h = yf - startY + 1;
+    if (w > 2) {
+      const d = ctx.getImageData(x0, startY, w, h).data;
+      const need = Math.min(w, Math.round((bl.x1 - bl.x0) * s)) * 0.85;
+      for (let y = 0; y < h; y++) {
+        let n = 0; for (let x = 0; x < w; x++) if (inkAt(d, (y * w + x) * 4)) n++;
+        if (n >= need) { bl.floor = Math.min(bl.bottom, bl.floor + (h - y) / s + 0.8); break; }
+      }
+    }
+  }
+}
+
+async function renderCanvas(page, scale) {
+  const vp = page.getViewport({ scale });
+  const cv = document.createElement("canvas");
+  cv.width = Math.ceil(vp.width); cv.height = Math.ceil(vp.height);
+  const ctx = cv.getContext("2d", { willReadFrequently: true });
+  await page.render({ canvasContext: ctx, viewport: vp }).promise;
+  return { cv, ctx, vp };
+}
+
+async function typeset(pages, bytes) {
+  const { PDFDocument, StandardFonts, rgb } = PDFLib;
+  const doc = await PDFDocument.load(bytes, { ignoreEncryption: true });
+  const reg = await doc.embedFont(StandardFonts.Helvetica);
+  const bold = await doc.embedFont(StandardFonts.HelveticaBold);
+  let small = 0, placed = 0;
+  for (let i = 0; i < pages.length; i++) {
+    const pg = pages[i];
+    const todo = pg.blocks.filter((b) => b.translate && b.out);
+    if (!todo.length) continue;
+    const { ctx, vp } = await renderCanvas(pg.page, 2);
+    const out = doc.getPage(i);
+    const colors = todo.map((bl) => sampleColors(ctx, vp, bl, 1.2));
+    todo.forEach((bl, k) => ruleLimits(ctx, vp, bl, colors[k].bg));
+    todo.forEach((bl, k) => {                                     // 1) cover the original text
+      const pad = 0.6;
+      out.drawRectangle({ x: bl.x0 - pad, y: bl.bottom - pad, width: bl.x1 - bl.x0 + 2 * pad, height: bl.top - bl.bottom + 2 * pad,
+        color: rgb(...colors[k].bg), borderWidth: 0 });
+    });
+    todo.forEach((bl, k) => {                                     // 2) write the translation
+      const font = bl.bold ? bold : reg;
+      const text = latin1(bl.out);
+      if (!text) return;
+      const f = fit(bl, text, font);
+      if (f.size < bl.size * 0.97) small++;
+      const lh = f.size * 1.17;
+      let y = bl.top - f.size * 0.86;
+      for (const line of f.lines) {
+        const w = font.widthOfTextAtSize(line, f.size);
+        const x = bl.center ? (bl.left + bl.right) / 2 - w / 2 : bl.x0;
+        out.drawText(line, { x, y, size: f.size, font, color: rgb(...colors[k].fg) });
+        y -= lh;
+      }
+      placed++;
+    });
+  }
+  return { bytes: await doc.save(), small, placed };
+}
+
+// ------------------------------------------------------------------ run
+// ------------------------------------------------------------------ Google Translate (free web endpoint)
+const G_SRC = { zh: "zh-CN", ja: "ja", ko: "ko", th: "th", ru: "ru", any: "auto" };
+const G_TGT = { English: "en", French: "fr", German: "de", Spanish: "es", Italian: "it", Portuguese: "pt", Indonesian: "id", Malay: "ms" };
+const G_URL = "https://translate.googleapis.com/translate_a/single?client=gtx&dt=t";
+const sleep = (ms, signal) => new Promise((ok, no) => {
+  const t = setTimeout(ok, ms);
+  signal?.addEventListener("abort", () => { clearTimeout(t); no({ code: "cancelled" }); }, { once: true });
+});
+async function google(text, sl, tl, signal) {
+  const url = `${G_URL}&sl=${sl}&tl=${tl}`;
+  for (let attempt = 0; attempt < 5; attempt++) {
+    let r;
+    try {
+      r = text.length > 1500
+        ? await fetch(url, { method: "POST", body: new URLSearchParams({ q: text }), signal })
+        : await fetch(url + "&q=" + encodeURIComponent(text), { signal });
+    } catch (e) {
+      if (signal?.aborted) throw { code: "cancelled" };
+      if (attempt === 4) throw { title: "ติดต่อ Google Translate ไม่ได้", body: "ตรวจอินเทอร์เน็ต แล้วกดแปลอีกครั้ง" };
+      await sleep(1000 * 2 ** attempt, signal); continue;
+    }
+    if (r.status === 429 || r.status >= 500) {
+      if (attempt === 4) throw { title: "Google Translate จำกัดการใช้งานชั่วคราว", body: "แปลถี่เกินไป รอประมาณ 5-10 นาทีแล้วกดแปลอีกครั้ง" };
+      await sleep(1500 * 2 ** attempt, signal); continue;
+    }
+    if (!r.ok) throw { title: `Google Translate ตอบกลับผิดพลาด (${r.status})`, body: "ลองกดแปลอีกครั้ง" };
+    const data = await r.json();
+    return (Array.isArray(data?.[0]) ? data[0] : []).map((p) => (p && p[0]) || "").join("");
+  }
+}
+
+$("go").addEventListener("click", run);
+$("stop").addEventListener("click", () => S.ctl?.abort());
+$("again").addEventListener("click", () => { view("empty"); $("saved").textContent = ""; });
+
+async function run() {
+  if (!S.bytes) return;
+  view("work"); showMsg("w-msg"); [1, 2, 3].forEach((n) => step(n, ""));
+  $("w-title").textContent = "กำลังแปล…"; $("s2bar").style.width = "0";
+  $("go").disabled = true; $("stop").hidden = false;
+  S.ctl = new AbortController(); S.t0 = performance.now(); S.timer = setInterval(tick, 500); tick();
+  const srcSel = $("src"), tgt = $("tgt").value;
+    try {
+    if (!window.pdfjsLib || !window.PDFLib) throw { title: "โหลดส่วนประกอบของหน้าเว็บไม่สำเร็จ", body: "ตรวจอินเทอร์เน็ต แล้วโหลดหน้านี้ใหม่" };
+    // 1 --------------------------------------------------------------
+    step(1, "on");
+    const pdf = await pdfjsLib.getDocument({ data: S.bytes.slice(0), isEvalSupported: false, CMapReaderFactory: EmbeddedCMaps, useWorkerFetch: false }).promise;
+    const pages = await analyse(pdf, SRC_RE[srcSel.value]);
+    const all = pages.flatMap((pg, i) => pg.blocks.filter((b) => b.translate).map((b, k) => Object.assign(b, { id: `p${i + 1}-${k + 1}` })));
+    const imageOnly = pages.filter((pg) => pg.chars < 5).length;
+    $("s1d").textContent = `${pdf.numPages} หน้า · พบ ${all.length} ข้อความที่ต้องแปล`;
+    step(1, "done");
+    if (!all.length) {
+      throw imageOnly ? { title: "ไม่พบตัวอักษรที่อ่านได้ในไฟล์นี้", body: "PDF นี้น่าจะเป็นภาพสแกนหรือตัวอักษรแบบเส้น ซึ่งไฟล์นี้ยังอ่านไม่ได้ — ใช้โปรแกรมเต็ม (มี OCR) หรือส่งไฟล์ให้ Claude ในแชท" }
+                      : { title: "ไม่พบข้อความภาษาต้นฉบับที่เลือก", body: "ตรวจว่าเลือกภาษาต้นฉบับถูกต้อง" };
+    }
+    // 2 --------------------------------------------------------------
+    step(2, "on");
+    const sl = G_SRC[srcSel.value] || "auto", tl = G_TGT[tgt] || "en";
+    let done = 0, next = 0;
+    const worker = async () => {
+      while (next < all.length) {
+        const b = all[next++];
+        const t = await google(b.text, sl, tl, S.ctl.signal);
+        if (t && t.trim()) b.out = t.trim();
+        done++;
+        $("s2d").textContent = `แปลแล้ว ${done} จาก ${all.length} ข้อความ`;
+        $("s2bar").style.width = (100 * done / all.length) + "%";
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(4, all.length) }, worker));
+    $("s2d").textContent = `แปลแล้ว ${all.filter((b) => b.out).length} จาก ${all.length} ข้อความ`;
+    step(2, "done");
+    // 3 --------------------------------------------------------------
+    step(3, "on");
+    const out = await typeset(pages, S.bytes);
+    step(3, "done");
+    S.out = out.bytes;
+    await showResult(pdf, out, pages.length, imageOnly);
+  } catch (e) {
+    if ((e && e.code === "cancelled") || S.ctl.signal.aborted) { view("empty"); }
+    else {
+      const [t, b] = [e?.title || "แปลไม่สำเร็จ", e?.body || String(e?.message || e)];
+      $("w-title").textContent = "แปลไม่สำเร็จ";
+      document.querySelectorAll(".step.on").forEach((s) => s.classList.remove("on"));
+      showMsg("w-msg", "err", t, b);
+    }
+  } finally {
+    clearInterval(S.timer); $("go").disabled = false; $("stop").hidden = true;
+  }
+}
+
+// ------------------------------------------------------------------ result
+let SRC_PDF = null, OUT_PDF = null;
+async function showResult(srcPdf, out, nPages, imageOnly) {
+  SRC_PDF = srcPdf;
+  OUT_PDF = await pdfjsLib.getDocument({ data: out.bytes.slice(0), isEvalSupported: false, CMapReaderFactory: EmbeddedCMaps, useWorkerFetch: false }).promise;
+  S.pages = nPages; S.page = 0;
+  $("r-pages").textContent = nPages;
+  $("r-blocks").textContent = out.placed.toLocaleString();
+  $("r-small").textContent = out.small.toLocaleString();
+  $("r-pill").textContent = `วางคำแปลแล้ว ${out.placed} จุด`;
+  showMsg("r-msg");
+  if (imageOnly) showMsg("r-msg", "warn", `${imageOnly} หน้าเป็นภาพ จึงยังไม่ได้แปล`, "หน้าที่เป็นภาพสแกนต้องใช้โปรแกรมเต็มที่มี OCR");
+  view("result");
+  await drawPages();
+}
+async function drawInto(pdf, n, canvas) {
+  const page = await pdf.getPage(n + 1);
+  const vp = page.getViewport({ scale: 1.6 });
+  canvas.width = Math.ceil(vp.width); canvas.height = Math.ceil(vp.height);
+  await page.render({ canvasContext: canvas.getContext("2d"), viewport: vp }).promise;
+}
+async function drawPages() {
+  $("pnum").textContent = `${S.page + 1} / ${S.pages}`;
+  $("prev").disabled = S.page === 0; $("next").disabled = S.page >= S.pages - 1;
+  await Promise.all([drawInto(SRC_PDF, S.page, $("cv-src")), drawInto(OUT_PDF, S.page, $("cv-out"))]);
+}
+$("prev").addEventListener("click", () => { if (S.page > 0) { S.page--; drawPages(); } });
+$("next").addEventListener("click", () => { if (S.page < S.pages - 1) { S.page++; drawPages(); } });
+
+$("download").addEventListener("click", () => {
+  if (!S.out) return;
+  const base = (S.file?.name || "document.pdf").replace(/\.pdf$/i, "");
+  const url = URL.createObjectURL(new Blob([S.out], { type: "application/pdf" }));
+  const a = document.createElement("a");
+  a.href = url; a.download = `${base}.${G_TGT[$("tgt").value] || "translated"}.pdf`;
+  document.body.append(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
+  $("saved").textContent = "บันทึกไฟล์แล้ว (ดูในโฟลเดอร์ Downloads)";
+});
+})();
+</script>
