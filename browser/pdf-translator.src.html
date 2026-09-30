@@ -60,7 +60,8 @@ header p { margin: 2px 0 0; color: var(--ink-2); font-size: 13.5px; }
 .grid { display: grid; grid-template-columns: minmax(0, 360px) minmax(0, 1fr); gap: 18px; align-items: start; }
 @media (max-width: 900px) { .grid { grid-template-columns: minmax(0, 1fr); } }
 .card { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; box-shadow: var(--shadow); }
-.settings { padding: 20px; display: grid; gap: 18px; }
+.settings { padding: 20px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 18px; min-width: 0; }
+.grid > * { min-width: 0; }
 .lbl { font-size: 13px; font-weight: 600; color: var(--ink-2); margin-bottom: 8px; }
 
 .drop { display: grid; justify-items: center; gap: 4px; text-align: center; padding: 22px 14px; border: 1.5px dashed var(--line-strong);
@@ -81,6 +82,8 @@ select { width: 100%; padding: 10px 12px; border-radius: 10px; border: 1px solid
 select:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .arrow { color: var(--ink-3); }
 .hint { color: var(--ink-3); font-size: 12.5px; margin-top: 6px; }
+input[type="text"] { width: 100%; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface); }
+input[type="text"]:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 .primary { width: 100%; padding: 13px 16px; border: 0; border-radius: 12px; cursor: pointer; font-weight: 600; font-size: 15.5px;
   background: linear-gradient(135deg, var(--accent), var(--violet)); color: #fff; display: flex; justify-content: center; align-items: center; gap: 10px;
@@ -206,6 +209,12 @@ select:focus-visible, button:focus-visible { outline: 2px solid var(--accent); o
         <div class="hint">แปลเป็นภาษาอักษรโรมันได้ (เช่น อังกฤษ)</div>
       </div>
 
+      <div>
+        <label class="lbl" for="pages">3. หน้าที่จะแปล</label>
+        <input type="text" id="pages" placeholder="ทุกหน้า" inputmode="numeric" autocomplete="off">
+        <div class="hint" id="pages-hint">เว้นว่าง = ทุกหน้า · เช่น 1-20 หรือ 1-5,8,12</div>
+      </div>
+
       <button class="primary" id="go" type="button" disabled>
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
         แปลเอกสาร
@@ -244,7 +253,7 @@ select:focus-visible, button:focus-visible { outline: 2px solid var(--accent); o
         <div class="steps">
           <div class="step" id="s1"><div class="dot">1</div><div><div class="t">อ่านเอกสาร</div><div class="d" id="s1d">หาข้อความ ย่อหน้า และช่องตาราง</div></div></div>
           <div class="step" id="s2"><div class="dot">2</div><div style="flex:1;min-width:0"><div class="t">แปลด้วย Google Translate</div><div class="d" id="s2d">แปลทีละข้อความตามลำดับการอ่าน</div><div class="bar"><i id="s2bar"></i></div></div></div>
-          <div class="step" id="s3"><div class="dot">3</div><div><div class="t">วางคำแปลลงหน้าเดิม</div><div class="d">ปรับขนาดตัวอักษรให้พอดีช่อง</div></div></div>
+          <div class="step" id="s3"><div class="dot">3</div><div><div class="t">วางคำแปลลงหน้าเดิม</div><div class="d" id="s3d">ปรับขนาดตัวอักษรให้พอดีช่อง</div></div></div>
         </div>
         <div id="w-msg"></div>
       </section>
@@ -358,9 +367,22 @@ async function fontNameOf(page, id) {
   try { const f = page.commonObjs.get(id); return (f && (f.name || f.loadedName)) || ""; } catch { return ""; }
 }
 
-async function analyse(pdf, srcRe) {
+function parsePages(spec, n) {
+  if (!spec.trim()) return null;
+  const set = new Set();
+  for (const part of spec.split(/[,\s]+/).filter(Boolean)) {
+    const m = part.match(/^(\d*)\s*-\s*(\d*)$/);
+    if (m) { const a = +(m[1] || 1), b = +(m[2] || n); for (let i = a; i <= Math.min(b, n); i++) set.add(i); }
+    else if (/^\d+$/.test(part) && +part >= 1 && +part <= n) set.add(+part);
+  }
+  return set.size ? set : null;
+}
+
+async function analyse(pdf, srcRe, only, onPage) {
   const pages = [];
   for (let p = 1; p <= pdf.numPages; p++) {
+    if (only && !only.has(p)) { pages.push({ page: null, view: null, blocks: [], chars: -1 }); continue; }
+    onPage?.(p);
     const page = await pdf.getPage(p);
     const tc = await page.getTextContent();
     try { await page.getOperatorList(); } catch {}
@@ -380,6 +402,7 @@ async function analyse(pdf, srcRe) {
     pages.push({ page, view: page.view, rotate: page.rotate, blocks, chars: items.reduce((n, i) => n + i.str.length, 0) });
   }
   for (const pg of pages) {
+    if (!pg.page) continue;
     for (const bl of pg.blocks) bl.translate = srcRe.test(bl.text);
     measureSpace(pg);
   }
@@ -607,7 +630,7 @@ async function renderCanvas(page, scale) {
   return { cv, ctx, vp };
 }
 
-async function typeset(pages, bytes) {
+async function typeset(pages, bytes, onPage) {
   const { PDFDocument, StandardFonts, rgb } = PDFLib;
   const doc = await PDFDocument.load(bytes, { ignoreEncryption: true });
   const reg = await doc.embedFont(StandardFonts.Helvetica);
@@ -617,6 +640,7 @@ async function typeset(pages, bytes) {
     const pg = pages[i];
     const todo = pg.blocks.filter((b) => b.translate && b.out);
     if (!todo.length) continue;
+    onPage?.(i + 1);
     const { ctx, vp } = await renderCanvas(pg.page, 2);
     const out = doc.getPage(i);
     const colors = todo.map((bl) => sampleColors(ctx, vp, bl, 1.2));
@@ -678,6 +702,39 @@ async function google(text, sl, tl, signal) {
   }
 }
 
+// Many segments per request: joined with line breaks, which Google keeps.
+// A batch whose line count comes back different is split and retried, so
+// every translation always lands on its own segment.
+const MAX_URL_CHARS = 6000;
+function gBatches(blocks) {
+  const out = []; let cur = [], len = 0;
+  for (const b of blocks) {
+    const n = encodeURIComponent(b.text).length + 3;
+    if (cur.length && (len + n > MAX_URL_CHARS || cur.length >= 80)) { out.push(cur); cur = []; len = 0; }
+    cur.push(b); len += n;
+  }
+  if (cur.length) out.push(cur);
+  return out;
+}
+async function translateBatch(batch, sl, tl, signal) {
+  const clean = (t) => t.replace(/[\r\n]+/g, " ");
+  if (batch.length === 1) {
+    const t = await google(clean(batch[0].text), sl, tl, signal);
+    if (t && t.trim()) batch[0].out = t.trim();
+    return;
+  }
+  const res = await google(batch.map((b) => clean(b.text)).join("\n"), sl, tl, signal);
+  const lines = (res || "").split("\n");
+  if (lines.length === batch.length) {
+    batch.forEach((b, i) => { const t = lines[i].trim(); if (t) b.out = t; });
+    return;
+  }
+  const half = batch.length >> 1;
+  await translateBatch(batch.slice(0, half), sl, tl, signal);
+  await translateBatch(batch.slice(half), sl, tl, signal);
+}
+const fmtLeft = (sec) => sec < 60 ? "ไม่ถึง 1 นาที" : `ประมาณ ${Math.round(sec / 60)} นาที`;
+
 $("go").addEventListener("click", run);
 $("stop").addEventListener("click", () => S.ctl?.abort());
 $("again").addEventListener("click", () => { view("empty"); $("saved").textContent = ""; });
@@ -694,10 +751,12 @@ async function run() {
     // 1 --------------------------------------------------------------
     step(1, "on");
     const pdf = await pdfjsLib.getDocument({ data: S.bytes.slice(0), isEvalSupported: false, CMapReaderFactory: EmbeddedCMaps, useWorkerFetch: false }).promise;
-    const pages = await analyse(pdf, SRC_RE[srcSel.value]);
+    const only = parsePages($("pages").value, pdf.numPages);
+    const pages = await analyse(pdf, SRC_RE[srcSel.value], only, (p) => { $("s1d").textContent = `อ่านหน้า ${p} จาก ${pdf.numPages}`; });
     const all = pages.flatMap((pg, i) => pg.blocks.filter((b) => b.translate).map((b, k) => Object.assign(b, { id: `p${i + 1}-${k + 1}` })));
-    const imageOnly = pages.filter((pg) => pg.chars < 5).length;
-    $("s1d").textContent = `${pdf.numPages} หน้า · พบ ${all.length} ข้อความที่ต้องแปล`;
+    const imageOnly = pages.filter((pg) => pg.chars >= 0 && pg.chars < 5).length;
+    const nSel = only ? only.size : pdf.numPages;
+    $("s1d").textContent = `${nSel} หน้า${only ? ` (จาก ${pdf.numPages})` : ""} · พบ ${all.length.toLocaleString()} ข้อความที่ต้องแปล`;
     step(1, "done");
     if (!all.length) {
       throw imageOnly ? { title: "ไม่พบตัวอักษรที่อ่านได้ในไฟล์นี้", body: "PDF นี้น่าจะเป็นภาพสแกนหรือตัวอักษรแบบเส้น ซึ่งไฟล์นี้ยังอ่านไม่ได้ — ใช้โปรแกรมเต็ม (มี OCR) หรือส่งไฟล์ให้ Claude ในแชท" }
@@ -706,26 +765,30 @@ async function run() {
     // 2 --------------------------------------------------------------
     step(2, "on");
     const sl = G_SRC[srcSel.value] || "auto", tl = G_TGT[tgt] || "en";
+    const jobs = gBatches(all);
     let done = 0, next = 0;
+    const t2 = performance.now();
     const worker = async () => {
-      while (next < all.length) {
-        const b = all[next++];
-        const t = await google(b.text, sl, tl, S.ctl.signal);
-        if (t && t.trim()) b.out = t.trim();
-        done++;
-        $("s2d").textContent = `แปลแล้ว ${done} จาก ${all.length} ข้อความ`;
+      while (next < jobs.length) {
+        const job = jobs[next++];
+        await translateBatch(job, sl, tl, S.ctl.signal);
+        done += job.length;
+        const rate = done / Math.max(1, (performance.now() - t2) / 1000);
+        $("s2d").textContent = `แปลแล้ว ${done.toLocaleString()} จาก ${all.length.toLocaleString()} ข้อความ · เหลือ${fmtLeft((all.length - done) / Math.max(rate, 0.01))}`;
         $("s2bar").style.width = (100 * done / all.length) + "%";
       }
     };
-    await Promise.all(Array.from({ length: Math.min(4, all.length) }, worker));
+    await Promise.all(Array.from({ length: Math.min(3, jobs.length) }, worker));
     $("s2d").textContent = `แปลแล้ว ${all.filter((b) => b.out).length} จาก ${all.length} ข้อความ`;
     step(2, "done");
     // 3 --------------------------------------------------------------
     step(3, "on");
-    const out = await typeset(pages, S.bytes);
+    const nWork = pages.filter((pg) => pg.blocks.some((b) => b.translate && b.out)).length;
+    const out = await typeset(pages, S.bytes, (p) => { $("s3d").textContent = `วางคำแปลหน้า ${p} (${nWork} หน้า)`; });
     step(3, "done");
     S.out = out.bytes;
-    await showResult(pdf, out, pages.length, imageOnly);
+    const first = Math.max(0, pages.findIndex((pg) => pg.blocks.some((bl) => bl.out)));
+    await showResult(pdf, out, pages.length, imageOnly, first);
   } catch (e) {
     if ((e && e.code === "cancelled") || S.ctl.signal.aborted) { view("empty"); }
     else {
@@ -741,10 +804,10 @@ async function run() {
 
 // ------------------------------------------------------------------ result
 let SRC_PDF = null, OUT_PDF = null;
-async function showResult(srcPdf, out, nPages, imageOnly) {
+async function showResult(srcPdf, out, nPages, imageOnly, first = 0) {
   SRC_PDF = srcPdf;
   OUT_PDF = await pdfjsLib.getDocument({ data: out.bytes.slice(0), isEvalSupported: false, CMapReaderFactory: EmbeddedCMaps, useWorkerFetch: false }).promise;
-  S.pages = nPages; S.page = 0;
+  S.pages = nPages; S.page = first;
   $("r-pages").textContent = nPages;
   $("r-blocks").textContent = out.placed.toLocaleString();
   $("r-small").textContent = out.small.toLocaleString();
