@@ -679,6 +679,10 @@ const sleep = (ms, signal) => new Promise((ok, no) => {
   const t = setTimeout(ok, ms);
   signal?.addEventListener("abort", () => { clearTimeout(t); no({ code: "cancelled" }); }, { once: true });
 });
+const BLOCKED = {
+  title: "Google Translate ไม่ตอบ (น่าจะถูกจำกัดการใช้งานชั่วคราว)",
+  body: "Google จะบล็อกชั่วคราวเมื่อมีการแปลจำนวนมากจากเครื่องเดียว เช่นหลังลองแปลไฟล์ใหญ่ — รอประมาณ 30-60 นาทีแล้วกดแปลอีกครั้ง หรือลองเปิด translate.google.com ดูว่าใช้งานได้ไหม · ถ้าอินเทอร์เน็ตมีปัญหา ให้ตรวจการเชื่อมต่อด้วย",
+};
 async function google(text, sl, tl, signal) {
   const url = `${G_URL}&sl=${sl}&tl=${tl}`;
   for (let attempt = 0; attempt < 5; attempt++) {
@@ -689,11 +693,13 @@ async function google(text, sl, tl, signal) {
         : await fetch(url + "&q=" + encodeURIComponent(text), { signal });
     } catch (e) {
       if (signal?.aborted) throw { code: "cancelled" };
-      if (attempt === 4) throw { title: "ติดต่อ Google Translate ไม่ได้", body: "ตรวจอินเทอร์เน็ต แล้วกดแปลอีกครั้ง" };
-      await sleep(1000 * 2 ** attempt, signal); continue;
+      // The browser hides Google's reply when it is an error page (rate
+      // limit, request too long): it looks like a network failure.
+      if (attempt === 2) throw { net: true, ...BLOCKED };
+      await sleep(1500 * 2 ** attempt, signal); continue;
     }
     if (r.status === 429 || r.status >= 500) {
-      if (attempt === 4) throw { title: "Google Translate จำกัดการใช้งานชั่วคราว", body: "แปลถี่เกินไป รอประมาณ 5-10 นาทีแล้วกดแปลอีกครั้ง" };
+      if (attempt === 4) throw BLOCKED;
       await sleep(1500 * 2 ** attempt, signal); continue;
     }
     if (!r.ok) throw { title: `Google Translate ตอบกลับผิดพลาด (${r.status})`, body: "ลองกดแปลอีกครั้ง" };
@@ -705,7 +711,7 @@ async function google(text, sl, tl, signal) {
 // Many segments per request: joined with line breaks, which Google keeps.
 // A batch whose line count comes back different is split and retried, so
 // every translation always lands on its own segment.
-const MAX_URL_CHARS = 6000;
+const MAX_URL_CHARS = 3500;
 function gBatches(blocks) {
   const out = []; let cur = [], len = 0;
   for (const b of blocks) {
@@ -723,8 +729,18 @@ async function translateBatch(batch, sl, tl, signal) {
     if (t && t.trim()) batch[0].out = t.trim();
     return;
   }
-  const res = await google(batch.map((b) => clean(b.text)).join("\n"), sl, tl, signal);
-  const lines = (res || "").split("\n");
+  let res;
+  try {
+    res = await google(batch.map((b) => clean(b.text)).join("\n"), sl, tl, signal);
+  } catch (e) {
+    if (!e?.net) throw e;
+    res = null;                                   // too long for Google? try smaller pieces
+  }
+  if (res === null && batch.length <= 2) {
+    for (const b of batch) await translateBatch([b], sl, tl, signal);
+    return;
+  }
+  const lines = res === null ? [] : res.split("\n");
   if (lines.length === batch.length) {
     batch.forEach((b, i) => { const t = lines[i].trim(); if (t) b.out = t; });
     return;
@@ -772,13 +788,14 @@ async function run() {
       while (next < jobs.length) {
         const job = jobs[next++];
         await translateBatch(job, sl, tl, S.ctl.signal);
+        await sleep(300, S.ctl.signal);            // be gentle: Google blocks bursts
         done += job.length;
         const rate = done / Math.max(1, (performance.now() - t2) / 1000);
         $("s2d").textContent = `แปลแล้ว ${done.toLocaleString()} จาก ${all.length.toLocaleString()} ข้อความ · เหลือ${fmtLeft((all.length - done) / Math.max(rate, 0.01))}`;
         $("s2bar").style.width = (100 * done / all.length) + "%";
       }
     };
-    await Promise.all(Array.from({ length: Math.min(3, jobs.length) }, worker));
+    await Promise.all(Array.from({ length: Math.min(2, jobs.length) }, worker));
     $("s2d").textContent = `แปลแล้ว ${all.filter((b) => b.out).length} จาก ${all.length} ข้อความ`;
     step(2, "done");
     // 3 --------------------------------------------------------------
