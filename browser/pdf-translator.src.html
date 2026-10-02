@@ -434,12 +434,35 @@ function groupLines(items) {
       host.x1 = Math.max(host.x1, it.x1);
       host.bold = host.bold && it.bold;
       host.n += 1;
+      host.items.push(it);
     } else {
-      lines.push({ text: it.str, x0: it.x0, x1: it.x1, base: it.base, size: it.size, bold: it.bold, n: 1 });
+      lines.push({ text: it.str, x0: it.x0, x1: it.x1, base: it.base, size: it.size, bold: it.bold, n: 1, items: [it] });
     }
   }
-  for (const ln of lines) { ln.text = ln.text.trim(); ln.top = ln.base + 0.88 * ln.size; ln.bottom = ln.base - 0.24 * ln.size; }
+  for (const ln of lines) { ln.text = ln.text.trim(); ln.top = ln.base + 0.88 * ln.size; ln.bottom = ln.base - 0.24 * ln.size; tocEntry(ln); }
   return lines.filter((l) => l.text);
+}
+
+// Table-of-contents entries ("5.7 Title ........ 92"): only the title is
+// translated; the page number stays exactly where it is and the dot leader
+// is redrawn up to it, so every number keeps its original column.
+const TOC = /^(.*?[^\s.．·・…‥⋯_‧•\-－])\s*((?:[.．·・…‥⋯_‧•\-－]\s*)+)(\d{1,4}|[ivxlcdm]{1,7}|[IVXLCDM]{1,7})$/;
+function tocEntry(ln) {
+  const m = TOC.exec(ln.text);
+  if (!m || m[2].replace(/\s/g, "").replace(/[…⋯]/g, "...").length < 3) return;
+  // where does the page number start? walk back over the items holding it
+  let tail = "", numX0 = null;
+  for (let i = ln.items.length - 1; i >= 0; i--) {
+    const it = ln.items[i], str = it.str.replace(/\s+$/, "");
+    tail = str + tail;
+    const t = tail.trim();
+    if (t === m[3]) { numX0 = it.x0 + (str.length - str.trimStart().length) * 0.25 * ln.size; break; }
+    if (t.length > m[3].length) {                // number shares an item with the leader
+      numX0 = it.x1 - m[3].length * 0.55 * it.size; ln.guess = true; break;
+    }
+  }
+  if (numX0 === null || numX0 - ln.x0 < 3 * ln.size) return;
+  ln.toc = { title: m[1], num: m[3], numX0, guess: !!ln.guess, x1: ln.x1 };
 }
 
 const BULLET = /^\s*([·•・●○◆■□▪※*\-–]|[①-⑳]|\(?\d{1,2}[.)、．]|[（(][0-9一二三四五六七八九十]{1,3}[)）])/;
@@ -449,9 +472,10 @@ function groupBlocks(lines) {
   const blocks = [];
   for (const ln of lines) {
     let host = null;
-    if (!BULLET.test(ln.text)) {
+    if (!BULLET.test(ln.text) && !ln.toc) {
       for (const bl of blocks) {
         const last = bl.lines[bl.lines.length - 1];
+        if (last.toc) continue;
         const size = Math.max(last.size, ln.size);
         const gap = last.bottom - ln.top;
         if (gap < -0.25 * size || gap > 0.7 * size) continue;
@@ -470,7 +494,8 @@ function groupBlocks(lines) {
       host.x0 = Math.min(host.x0, ln.x0); host.x1 = Math.max(host.x1, ln.x1); host.bottom = ln.bottom;
       void last;
     } else {
-      blocks.push({ lines: [ln], text: ln.text, x0: ln.x0, x1: ln.x1, top: ln.top, bottom: ln.bottom, size: ln.size, bold: ln.bold });
+      blocks.push({ lines: [ln], text: ln.toc ? ln.toc.title : ln.text, x0: ln.x0, x1: ln.x1, top: ln.top, bottom: ln.bottom,
+        size: ln.size, bold: ln.bold, toc: ln.toc, base: ln.base });
     }
   }
   for (const bl of blocks) {
@@ -621,6 +646,46 @@ function ruleLimits(ctx, vp, bl, bg) {
   }
 }
 
+// "Translated title ......... 92": the title in front, dots filling the gap,
+// ending just before the original (untouched) page number.
+function tocLine(out, bl, text, font, dotFont, color) {
+  const s0 = bl.size;
+  if (bl.toc.guess) {
+    // the number was drawn together with the leader, so it was covered too:
+    // write it again, right-aligned where the original ended
+    const w = font.widthOfTextAtSize(bl.toc.num, s0);
+    bl.toc.numX0 = bl.toc.x1 - w;
+    out.drawText(bl.toc.num, { x: bl.toc.numX0, y: bl.base, size: s0, font, color });
+  }
+  const gap = 0.3 * s0, end = bl.toc.numX0 - gap;
+  const dotW = dotFont.widthOfTextAtSize(".", s0);
+  const room = end - bl.x0 - 3 * dotW - 0.25 * s0;           // keep at least a short leader
+  let size = s0, lines = [text];
+  const w0 = font.widthOfTextAtSize(text, s0);
+  if (w0 > room) {
+    size = s0 * room / w0;
+    if (size < 0.72 * s0) {                                   // too long for one line: wrap if there is room below
+      const H = bl.top - bl.floor;
+      for (size = s0; size >= 0.5 * s0; size *= 0.96) {
+        const w = wrap(text, font, size, room);
+        if (w.widest <= room && w.lines.length * size * 1.17 <= H + 0.3 * size) { lines = w.lines; break; }
+      }
+      if (size < 0.5 * s0) { size = Math.max(3, s0 * room / w0); lines = [text]; }
+    }
+  }
+  let y = bl.base;
+  lines.forEach((line, i) => {
+    out.drawText(line, { x: bl.x0, y, size, font, color });
+    if (i === 0) {
+      const from = bl.x0 + font.widthOfTextAtSize(line, size) + 0.25 * s0;
+      const n = Math.floor((end - from) / dotW);
+      if (n > 0) out.drawText(".".repeat(n), { x: end - n * dotW, y, size: s0, font: dotFont, color });
+    }
+    y -= size * 1.17;
+  });
+  return size;
+}
+
 async function renderCanvas(page, scale) {
   const vp = page.getViewport({ scale });
   const cv = document.createElement("canvas");
@@ -644,16 +709,17 @@ async function typeset(pages, bytes, onPage) {
     const { ctx, vp } = await renderCanvas(pg.page, 2);
     const out = doc.getPage(i);
     const colors = todo.map((bl) => sampleColors(ctx, vp, bl, 1.2));
-    todo.forEach((bl, k) => ruleLimits(ctx, vp, bl, colors[k].bg));
+    todo.forEach((bl, k) => { if (!bl.toc) ruleLimits(ctx, vp, bl, colors[k].bg); });
     todo.forEach((bl, k) => {                                     // 1) cover the original text
-      const pad = 0.6;
-      out.drawRectangle({ x: bl.x0 - pad, y: bl.bottom - pad, width: bl.x1 - bl.x0 + 2 * pad, height: bl.top - bl.bottom + 2 * pad,
+      const pad = 0.6, x1 = bl.toc && !bl.toc.guess ? bl.toc.numX0 - 0.4 : bl.x1 + pad;   // a TOC page number stays
+      out.drawRectangle({ x: bl.x0 - pad, y: bl.bottom - pad, width: x1 - bl.x0 + pad, height: bl.top - bl.bottom + 2 * pad,
         color: rgb(...colors[k].bg), borderWidth: 0 });
     });
     todo.forEach((bl, k) => {                                     // 2) write the translation
       const font = bl.bold ? bold : reg;
       const text = latin1(bl.out);
       if (!text) return;
+      if (bl.toc) { if (tocLine(out, bl, text, font, reg, rgb(...colors[k].fg)) < bl.size * 0.97) small++; placed++; return; }
       const f = fit(bl, text, font);
       if (f.size < bl.size * 0.97) small++;
       const lh = f.size * 1.17;
