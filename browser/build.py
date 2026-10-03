@@ -1,4 +1,4 @@
-"""Build the single-file PDF-Translator.html from browser/pdf-translator.src.html.
+"""Build the single-file PDF-Tools.html from browser/app.src.html and browser/tools/.
 
     python browser/build.py PATH/TO/pdfjs-dist-3.11.174/cmaps
 
@@ -22,9 +22,22 @@ CDN = {
 }
 
 
+TOOL_FILES = ["core.js", "pages.js", "convert.js", "stamp.js", "editor.js", "compare.js"]
+
+
+def tools_bundle() -> tuple[str, str]:
+    """CSS and JS of all tools (browser/tools); files that do not exist yet are skipped."""
+    d = ROOT / "browser" / "tools"
+    css = "\n".join(f.read_text("utf-8") for f in sorted(d.glob("*.css")))
+    js = "\n".join((d / n).read_text("utf-8") for n in TOOL_FILES if (d / n).exists())
+    js = '(() => {\n"use strict";\n' + js + "\nboot();\n})();"
+    assert "</script" not in js, "tools must not contain a closing script tag"
+    return css, js
+
+
 def main() -> None:
     cmaps = Path(sys.argv[1])
-    src = (ROOT / "browser" / "pdf-translator.src.html").read_text("utf-8")
+    src = (ROOT / "browser" / "app.src.html").read_text("utf-8")
     buf = io.BytesIO()
     Image.open(ROOT / "pdf_translator" / "static" / "icon.png").resize((96, 96), Image.LANCZOS).save(buf, "PNG", optimize=True)
     icon = "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode()
@@ -34,12 +47,14 @@ def main() -> None:
     fontkit = (ROOT / "browser" / "vendor" / "fontkit.umd.min.js").read_text("utf-8").replace("</script", "<\\/script")
     src = src.replace("__CMAPDATA__", json.dumps(maps)).replace("__ICON__", icon).replace("__THAIFONT__", json.dumps(thai))
     src = src.replace("__FONTKIT__", fontkit)
+    css, js = tools_bundle()
+    src = src.replace("__TOOLSCSS__", css).replace("__TOOLSJS__", js)
     for k, v in CDN.items():
         src = src.replace(k, v)
     head = ('<!doctype html>\n<html lang="th">\n<head>\n<meta charset="utf-8">\n'
             '<meta name="viewport" content="width=device-width, initial-scale=1">\n'
             f'<link rel="icon" href="{icon}">\n</head>\n<body>\n')
-    out = ROOT / "PDF-Translator.html"
+    out = ROOT / "PDF-Tools.html"
     out.write_text(head + src + "\n</body>\n</html>\n", encoding="utf-8")
     print("written", out, out.stat().st_size, "bytes")
 

@@ -1,4 +1,4 @@
-<title>PDF Translator</title>
+<title>PDF Tools</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -53,7 +53,9 @@ button, input, select { font: inherit; color: inherit; }
 .wrap { max-width: 1240px; margin: 0 auto; padding-inline: 16px; padding-block: 18px 40px; }
 
 header { display: flex; align-items: center; gap: 14px; padding-block: 6px 22px; }
-header img { width: 46px; height: 46px; flex: none; }
+header img { width: 46px; height: 46px; flex: none; display: block; }
+header .htext { min-width: 0; flex: 1; }
+.homebtn { text-decoration: none; color: var(--ink); white-space: nowrap; }
 header h1 { margin: 0; font-size: 20px; line-height: 1.2; letter-spacing: -.01em; text-wrap: balance; }
 header p { margin: 2px 0 0; color: var(--ink-2); font-size: 13.5px; }
 
@@ -155,18 +157,25 @@ input[type="text"]:focus-visible { outline: 2px solid var(--accent); outline-off
 .pages figcaption.tr { color: var(--accent); }
 .pages canvas { display: block; width: 100%; height: auto; background: #fff; }
 .saved { font-size: 13px; color: var(--ok); }
+__TOOLSCSS__
 </style>
 
 <div class="wrap">
   <header>
-    <img src="__ICON__" alt="">
-    <div>
-      <h1>PDF Translator</h1>
-      <p>ดับเบิลคลิกเปิดไฟล์นี้ แล้วแปลได้เลย · ตำแหน่ง ตาราง และรูปอยู่ที่เดิม</p>
+    <a href="#/" class="logo" aria-label="หน้าแรก"><img src="__ICON__" alt=""></a>
+    <div class="htext">
+      <h1 id="h-title">PDF Tools</h1>
+      <p id="h-sub">เครื่องมือ PDF ครบในไฟล์เดียว · ทำงานในเครื่องคุณ ไฟล์ไม่ถูกอัปโหลด</p>
     </div>
+    <a href="#/" class="ghost homebtn" id="homebtn" hidden>
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+      เครื่องมือทั้งหมด</a>
   </header>
 
-  <div class="grid">
+  <section id="home"></section>
+  <section id="tool-generic" hidden></section>
+
+  <div class="grid" id="tool-translate" hidden>
     <section class="card settings" aria-label="ตั้งค่า">
       <div>
         <div class="lbl">1. เลือกไฟล์ PDF</div>
@@ -336,7 +345,7 @@ const drop = $("drop");
 ["dragleave", "drop"].forEach((t) => drop.addEventListener(t, (e) => { e.preventDefault(); drop.classList.remove("drag"); }));
 drop.addEventListener("drop", (e) => pick(e.dataTransfer.files[0]));
 document.addEventListener("dragover", (e) => e.preventDefault());
-document.addEventListener("drop", (e) => { e.preventDefault(); if (e.dataTransfer.files[0]) pick(e.dataTransfer.files[0]); });
+document.addEventListener("drop", (e) => { e.preventDefault(); if (!$("tool-translate").hidden && e.dataTransfer.files[0]) pick(e.dataTransfer.files[0]); });
 
 // ------------------------------------------------------------------ views
 function view(name) { for (const v of ["empty", "work", "result"]) $("v-" + v).hidden = v !== name; }
@@ -609,26 +618,34 @@ function tw(font, text, size) {                 // text width, cached per font
 }
 
 const FONT_KEYS = new WeakMap(), MAPPED = new WeakMap();                // page -> font -> resource name
-function drawLine(out, F, font, text, x, y, size, color) {
+function drawLine(out, F, font, text, x, y, size, color, o = {}) {
   const { rgb } = PDFLib;
-  if (!F.raw) { out.drawText(text, { x, y, size, font, color: rgb(...color) }); return; }
+  if (!F.raw) {
+    out.drawText(text, { x, y, size, font, color: rgb(...color), rotate: PDFLib.degrees(o.angle || 0), opacity: o.opacity ?? undefined });
+    return;
+  }
   const L = PDFLib, fk = font.embedder.font, k = size / fk.unitsPerEm;
+  const ang = (o.angle || 0) * Math.PI / 180, cs = Math.cos(ang), sn = Math.sin(ang);
   let keys = FONT_KEYS.get(out);
   if (!keys) FONT_KEYS.set(out, (keys = new Map()));
   if (!keys.has(font)) { out.setFont(font); keys.set(font, out.fontKey); }
-  const ops = [L.pushGraphicsState(), L.beginText(), L.setFillingRgbColor(...color), L.setFontAndSize(keys.get(font), size)];
+  const ops = [L.pushGraphicsState()];
+  const gs = o.opacity != null && o.opacity < 1 ? out.maybeEmbedGraphicsState({ opacity: o.opacity }) : null;
+  if (gs) ops.push(L.setGraphicsState(gs));
+  ops.push(L.beginText(), L.setFillingRgbColor(...color), L.setFontAndSize(keys.get(font), size));
   // glyphs reached only through the font's substitutions (ligatures, small
   // tone marks) have no width in the PDF's font table: place them one by one
   let mapped = MAPPED.get(fk);
   if (!mapped) MAPPED.set(fk, (mapped = new Set(fk.characterSet.map((c) => fk.glyphForCodePoint(c).id))));
   const run = fk.layout(text);
-  let pen = x, buf = "", bx = 0;
-  const flush = () => { if (buf) { ops.push(L.setTextMatrix(1, 0, 0, 1, bx, y), L.showText(L.PDFHexString.of(buf))); buf = ""; } };
+  const tm = (dx, dy) => L.setTextMatrix(cs, sn, -sn, cs, x + dx * cs - dy * sn, y + dx * sn + dy * cs);
+  let pen = 0, buf = "", bx = 0;                 // pen is measured from x along the baseline
+  const flush = () => { if (buf) { ops.push(tm(bx, 0), L.showText(L.PDFHexString.of(buf))); buf = ""; } };
   run.glyphs.forEach((g, i) => {
     const p = run.positions[i], hex = g.id.toString(16).padStart(4, "0");
     if (p.xOffset || p.yOffset || !mapped.has(g.id)) {   // a positioned mark: its own spot
       flush();
-      ops.push(L.setTextMatrix(1, 0, 0, 1, pen + p.xOffset * k, y + p.yOffset * k), L.showText(L.PDFHexString.of(hex)));
+      ops.push(tm(pen + p.xOffset * k, p.yOffset * k), L.showText(L.PDFHexString.of(hex)));
     } else {
       if (!buf) bx = pen;
       buf += hex;
@@ -1025,6 +1042,12 @@ async function drawPages() {
 $("prev").addEventListener("click", () => { if (S.page > 0) { S.page--; drawPages(); } });
 $("next").addEventListener("click", () => { if (S.page < S.pages - 1) { S.page++; drawPages(); } });
 
+// pieces the other tools share (see browser/tools/)
+window.PDFX = {
+  openPdf: (bytes) => pdfjsLib.getDocument({ data: bytes.slice(0), isEvalSupported: false, CMapReaderFactory: EmbeddedCMaps, useWorkerFetch: false }).promise,
+  loadFonts, drawLine, tw, latin1,
+};
+
 $("download").addEventListener("click", () => {
   if (!S.out) return;
   const base = (S.file?.name || "document.pdf").replace(/\.pdf$/i, "");
@@ -1036,4 +1059,7 @@ $("download").addEventListener("click", () => {
   $("saved").textContent = "บันทึกไฟล์แล้ว (ดูในโฟลเดอร์ Downloads)";
 });
 })();
+</script>
+<script>
+__TOOLSJS__
 </script>
