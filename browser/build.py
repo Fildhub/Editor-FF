@@ -3,7 +3,7 @@
     python browser/build.py PATH/TO/pdfjs-dist-3.11.174/cmaps
 
 CJK character maps (from the pdfjs-dist npm package), the Thai font
-(browser/fonts, Sarabun, SIL Open Font License) and the icon are embedded so the page works when opened straight from disk.
+(browser/fonts, Sarabun, SIL Open Font License), fontkit (browser/vendor) and the icon are embedded so the page works when opened straight from disk.
 """
 
 import base64
@@ -19,7 +19,6 @@ CDN = {
     "__PDFJS__": "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js",
     "__PDFJS_WORKER__": "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js",
     "__PDFLIB__": "https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js",
-    "__FONTKIT__": "https://unpkg.com/@pdf-lib/fontkit@1.1.1/dist/fontkit.umd.min.js",
 }
 
 
@@ -32,7 +31,9 @@ def main() -> None:
     maps = {f.stem: base64.b64encode(f.read_bytes()).decode() for f in sorted(cmaps.glob("*.bcmap"))}
     fonts = ROOT / "browser" / "fonts"
     thai = {k: base64.b64encode((fonts / f"Sarabun-{k.title()}.ttf").read_bytes()).decode() for k in ("regular", "bold")}
+    fontkit = (ROOT / "browser" / "vendor" / "fontkit.umd.min.js").read_text("utf-8").replace("</script", "<\\/script")
     src = src.replace("__CMAPDATA__", json.dumps(maps)).replace("__ICON__", icon).replace("__THAIFONT__", json.dumps(thai))
+    src = src.replace("__FONTKIT__", fontkit)
     for k, v in CDN.items():
         src = src.replace(k, v)
     head = ('<!doctype html>\n<html lang="th">\n<head>\n<meta charset="utf-8">\n'

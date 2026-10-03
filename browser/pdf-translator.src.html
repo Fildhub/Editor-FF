@@ -298,6 +298,7 @@ input[type="text"]:focus-visible { outline: 2px solid var(--accent); outline-off
 <script src="__PDFJS_WORKER__"></script>
 <script src="__PDFLIB__"></script>
 <script type="application/json" id="thaifont">__THAIFONT__</script>
+<script type="text/plain" id="fontkit-src">__FONTKIT__</script>
 <script>
 (() => {
 "use strict";
@@ -557,15 +558,13 @@ function latin1(s) {
 // font's own mark positioning so vowels and tone marks never collide.
 const THAI_RE = /[฀-๿]/;
 function decodeB64(b64) { const bin = atob(b64), u = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i); return u; }
-function loadScript(src) {
-  return new Promise((ok, no) => { const el = document.createElement("script"); el.src = src; el.onload = ok; el.onerror = no; document.head.appendChild(el); });
-}
-async function needFontkit() {
-  for (const src of FONTKIT_URLS) {
-    if (window.fontkit) return;
-    try { await loadScript(src); } catch {}
+function needFontkit() {                       // parsed only when a Thai translation is made
+  if (!window.fontkit) {
+    const el = document.createElement("script");
+    el.text = $("fontkit-src").textContent;
+    document.head.appendChild(el);
   }
-  if (!window.fontkit) throw { title: "โหลดฟอนต์ภาษาไทยไม่สำเร็จ", body: "ตรวจอินเทอร์เน็ต แล้วกดแปลอีกครั้ง" };
+  if (!window.fontkit) throw { title: "โหลดฟอนต์ภาษาไทยไม่สำเร็จ", body: "ลองโหลดหน้านี้ใหม่ แล้วกดแปลอีกครั้ง" };
 }
 async function loadFonts(doc, thai) {
   const { StandardFonts } = PDFLib;
@@ -573,7 +572,7 @@ async function loadFonts(doc, thai) {
     return { reg: await doc.embedFont(StandardFonts.Helvetica), bold: await doc.embedFont(StandardFonts.HelveticaBold),
       asc: 0.86, lh: 1.17, clean: latin1, raw: false };
   }
-  await needFontkit();
+  needFontkit();
   doc.registerFontkit(window.fontkit);
   const data = JSON.parse($("thaifont").textContent);
   const reg = await doc.embedFont(decodeB64(data.regular)), bold = await doc.embedFont(decodeB64(data.bold));
@@ -852,7 +851,6 @@ async function typeset(pages, bytes, thai, onPage) {
 // ------------------------------------------------------------------ Google Translate (free web endpoint)
 const G_SRC = { zh: "zh-CN", ja: "ja", ko: "ko", th: "th", ru: "ru", any: "auto" };
 const G_TGT = { English: "en", French: "fr", German: "de", Spanish: "es", Italian: "it", Portuguese: "pt", Indonesian: "id", Malay: "ms", Thai: "th" };
-const FONTKIT_URLS = ["__FONTKIT__", "https://cdn.jsdelivr.net/npm/@pdf-lib/fontkit@1.1.1/dist/fontkit.umd.min.js"];
 const G_URL = "https://translate.googleapis.com/translate_a/single?client=gtx&dt=t";
 const sleep = (ms, signal) => new Promise((ok, no) => {
   const t = setTimeout(ok, ms);
