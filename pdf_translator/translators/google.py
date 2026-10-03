@@ -1,6 +1,5 @@
 """Free Google Translate web endpoint (no API key, lower quality).
 
-Useful for a quick preview or when no Anthropic API key is available. The
 endpoint is unofficial and may be rate limited; glossary entries are applied
 only when a whole segment matches a glossary term.
 """

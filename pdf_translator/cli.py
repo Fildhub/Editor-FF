@@ -23,17 +23,13 @@ def build_parser() -> argparse.ArgumentParser:
         "-e",
         "--engine",
         default="google",
-        choices=["google", "claude", "file"],
-        help="google = free, no key needed (default); claude = best quality (needs ANTHROPIC_API_KEY); "
+        choices=["google", "file"],
+        help="google = Google Translate, free, no key needed (default); "
         "file = use translations from --translations JSON",
     )
-    p.add_argument("--model", help="Claude model id (default: claude-opus-5)")
-    p.add_argument("--effort", default="medium", choices=["low", "medium", "high", "xhigh", "max"],
-                   help="Claude effort level (default: medium)")
     p.add_argument("--translations", help="JSON with translations (for --engine file)")
     p.add_argument("--export-json", help="also write all segments + translations to this JSON (edit & re-use)")
     p.add_argument("--glossary", help="CSV/TSV/JSON glossary: source term,target term")
-    p.add_argument("--notes", default="", help="extra instructions for the translator (tone, audience...)")
     p.add_argument("-p", "--pages", help="pages to translate, e.g. 1-3,5 (default: all)")
     p.add_argument("--ocr", default="auto", choices=["auto", "always", "never"],
                    help="OCR pages without real text (scans / outlined text). default: auto")
@@ -61,13 +57,10 @@ def main(argv: list[str] | None = None) -> int:
         source_lang=args.source,
         target_lang=args.target,
         engine=args.engine,
-        model=args.model,
-        effort=args.effort,
         pages=args.pages,
         ocr=args.ocr,
         dpi=args.dpi,
         glossary=args.glossary,
-        notes=args.notes,
         translations=args.translations,
         font=args.font,
         serif=args.serif,

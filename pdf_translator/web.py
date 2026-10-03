@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import re
 import shutil
 import sys
@@ -140,7 +139,7 @@ class Handler(BaseHTTPRequestHandler):
         if not parts:
             return self._send(200, (STATIC / "index.html").read_bytes(), "text/html; charset=utf-8")
         if parts == ["api", "status"]:
-            return self._json({"app": "pdf-translator", "claude_key": bool(os.environ.get("ANTHROPIC_API_KEY"))})
+            return self._json({"app": "pdf-translator"})
         if parts == ["icon.png"]:
             return self._send(200, (STATIC / "icon.png").read_bytes(), "image/png", {"Cache-Control": "max-age=86400"})
         if len(parts) >= 3 and parts[:2] == ["api", "jobs"]:
@@ -182,16 +181,13 @@ class Handler(BaseHTTPRequestHandler):
         if not data.startswith(b"%PDF"):
             return self._json({"error": "this is not a PDF file"}, 400)
         q = {k: v[0] for k, v in parse_qs(url.query).items()}
-        if q.get("api_key"):
-            os.environ["ANTHROPIC_API_KEY"] = q["api_key"]
         opts = Options(
             source_lang=q.get("source", "zh"),
             target_lang=q.get("target", "en"),
-            engine=q.get("engine", "google"),
+            engine="google",
             pages=q.get("pages") or None,
             bilingual=q.get("bilingual") == "1",
             ocr=q.get("ocr", "auto"),
-            notes=q.get("notes", ""),
         )
         folder = WORK / uuid.uuid4().hex[:12]
         folder.mkdir(parents=True, exist_ok=True)

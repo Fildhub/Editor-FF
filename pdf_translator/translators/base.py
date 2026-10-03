@@ -23,8 +23,7 @@ class Context:
     source_lang: str
     target_lang: str
     glossary: dict[str, str] = field(default_factory=dict)
-    document_hint: str = ""  # a short excerpt so the model knows the domain
-    notes: str = ""  # extra user instructions
+    document_hint: str = ""  # a short excerpt of the document
 
 
 class Translator:
@@ -56,7 +55,7 @@ class TranslationCache:
     def key(tag: str, ctx: Context, text: str) -> str:
         h = hashlib.sha256()
         gl = json.dumps(ctx.glossary, sort_keys=True, ensure_ascii=False)
-        for part in (tag, ctx.source_lang, ctx.target_lang, gl, ctx.notes, text):
+        for part in (tag, ctx.source_lang, ctx.target_lang, gl, "", text):
             h.update(part.encode("utf-8"))
             h.update(b"\x00")
         return h.hexdigest()

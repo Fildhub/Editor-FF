@@ -141,10 +141,6 @@ select:focus, input:focus, textarea:focus { border-color: var(--accent); box-sha
 .engine .d { color: var(--text-2); font-size: 13px; }
 .badge { font-size: 11.5px; font-weight: 600; padding: 2px 8px; border-radius: 999px; }
 .badge.free { background: var(--ok-soft); color: var(--ok); }
-.badge.best { background: #f1ecff; color: #7c5cff; }
-:root[data-theme="dark"] .badge.best { background: #231c3d; }
-.key { margin-top: 10px; display: none; }
-.key.show { display: block; }
 .hint { color: var(--text-3); font-size: 12.5px; margin-top: 6px; }
 
 /* ---------- advanced */
@@ -310,16 +306,6 @@ footer { text-align: center; color: var(--text-3); font-size: 12.5px; margin-top
             <span><span class="t">Google Translate <span class="badge free">ฟรี</span></span>
             <span class="d">ไม่ต้องสมัคร ไม่ต้องใช้ key เหมาะกับงานทั่วไป</span></span>
           </label>
-          <label class="engine" data-engine="claude">
-            <input type="radio" name="engine" value="claude">
-            <span class="radio"></span>
-            <span><span class="t">Claude <span class="badge best">คุณภาพสูงสุด</span></span>
-            <span class="d">อ่านลื่นเหมือนคนแปล ศัพท์เทคนิคแม่น ตัดคำให้พอดีช่อง</span></span>
-          </label>
-        </div>
-        <div class="key" id="keybox">
-          <input type="password" id="apikey" placeholder="ANTHROPIC_API_KEY (sk-ant-...)" autocomplete="off">
-          <div class="hint" id="keyhint">สมัครได้ที่ console.anthropic.com · key ใช้บนเครื่องนี้เท่านั้น</div>
         </div>
       </div>
 
@@ -335,8 +321,6 @@ footer { text-align: center; color: var(--text-3); font-size: 12.5px; margin-top
             </div>
             <div class="toggle"><span>วางต้นฉบับกับคำแปลคู่กัน<br><span class="hint">ได้ PDF ที่มีหน้าซ้าย-ขวาเทียบกัน</span></span>
               <label class="switch"><input type="checkbox" id="bilingual"><span></span></label></div>
-            <div id="notesbox" class="hidden"><div class="label">คำแนะนำถึงผู้แปล (Claude)</div>
-              <textarea id="notes" placeholder="เช่น ผู้อ่านคือช่างเทคนิค ใช้ภาษาทางการ"></textarea></div>
           </div>
         </details>
       </div>
@@ -492,18 +476,6 @@ drop.addEventListener("drop", (e) => setFile(e.dataTransfer.files[0]));
 document.addEventListener("dragover", (e) => e.preventDefault());
 document.addEventListener("drop", (e) => { e.preventDefault(); if (e.dataTransfer.files[0]) setFile(e.dataTransfer.files[0]); });
 
-// ---------- engine
-document.querySelectorAll(".engine").forEach((el) => el.addEventListener("click", () => {
-  document.querySelectorAll(".engine").forEach((x) => x.classList.toggle("active", x === el));
-  el.querySelector("input").checked = true;
-  const claude = el.dataset.engine === "claude";
-  $("keybox").classList.toggle("show", claude);
-  $("notesbox").classList.toggle("hidden", !claude);
-}));
-fetch("/api/status").then((r) => r.json()).then((s) => {
-  if (s.claude_key) { $("apikey").placeholder = "ตั้งค่า key ไว้แล้วในเครื่อง (ไม่ต้องกรอก)"; }
-}).catch(() => {});
-
 // ---------- views
 function show(view) {
   for (const v of ["empty", "progress", "result"]) $("v-" + v).classList.toggle("hidden", v !== view);
@@ -525,13 +497,10 @@ $("again").onclick = () => { show("empty"); state.job = null; };
 
 async function start() {
   if (!state.file) return;
-  const engine = document.querySelector('input[name="engine"]:checked').value;
   const q = new URLSearchParams({
-    name: state.file.name, source: $("src").value, target: $("tgt").value, engine,
+    name: state.file.name, source: $("src").value, target: $("tgt").value, engine: "google",
     pages: $("pages").value.trim(), ocr: $("ocr").value, bilingual: $("bilingual").checked ? "1" : "0",
-    notes: $("notes").value.trim(),
   });
-  if (engine === "claude" && $("apikey").value.trim()) q.set("api_key", $("apikey").value.trim());
   show("progress");
   $("err").classList.add("hidden");
   $("p-title").textContent = "กำลังอัปโหลด…";

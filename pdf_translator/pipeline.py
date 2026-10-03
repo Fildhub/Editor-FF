@@ -30,13 +30,10 @@ class Options:
     source_lang: str = "zh"
     target_lang: str = "en"
     engine: str = "google"
-    model: Optional[str] = None
-    effort: str = "medium"
     pages: Optional[str] = None  # "1-3,5"
     ocr: str = "auto"  # auto | always | never
     dpi: int = 300
     glossary: Optional[str] = None
-    notes: str = ""
     translations: Optional[str] = None  # JSON file for --engine file
     font: Optional[str] = None
     serif: bool = False
@@ -115,10 +112,10 @@ def translate_segments(all_segs: list[Segment], opts: Options, log) -> None:
     todo = [s for s in all_segs if s.translate]
     if not todo:
         return
-    translator = get_translator(opts.engine, model=opts.model, effort=opts.effort, path=opts.translations)
+    translator = get_translator(opts.engine, path=opts.translations)
     glossary = load_glossary(opts.glossary)
     hint = " / ".join(s.text for s in all_segs[:40])[:1500]
-    ctx = Context(opts.source_lang, opts.target_lang, glossary, hint, opts.notes)
+    ctx = Context(opts.source_lang, opts.target_lang, glossary, hint)
     cache = TranslationCache(opts.cache_dir / "translations.sqlite") if (opts.cache_dir and opts.engine != "file") else TranslationCache(None)
     tag = translator.cache_tag()
 

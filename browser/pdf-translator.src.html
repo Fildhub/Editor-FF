@@ -204,9 +204,9 @@ input[type="text"]:focus-visible { outline: 2px solid var(--accent); outline-off
             <option value="Portuguese">โปรตุเกส</option>
             <option value="Indonesian">อินโดนีเซีย</option>
             <option value="Malay">มลายู</option>
+            <option value="Thai">ไทย</option>
           </select>
         </div>
-        <div class="hint">แปลเป็นภาษาอักษรโรมันได้ (เช่น อังกฤษ)</div>
       </div>
 
       <div>
@@ -297,6 +297,7 @@ input[type="text"]:focus-visible { outline: 2px solid var(--accent); outline-off
 <script src="__PDFJS__"></script>
 <script src="__PDFJS_WORKER__"></script>
 <script src="__PDFLIB__"></script>
+<script type="application/json" id="thaifont">__THAIFONT__</script>
 <script>
 (() => {
 "use strict";
@@ -551,26 +552,126 @@ function latin1(s) {
   return out.replace(/[ \t]+/g, " ").trim();
 }
 
+// Fonts for the translation. Latin targets use the PDF built-in Helvetica.
+// Thai uses the embedded Sarabun font, written glyph by glyph with the
+// font's own mark positioning so vowels and tone marks never collide.
+const THAI_RE = /[฀-๿]/;
+function decodeB64(b64) { const bin = atob(b64), u = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i); return u; }
+function loadScript(src) {
+  return new Promise((ok, no) => { const el = document.createElement("script"); el.src = src; el.onload = ok; el.onerror = no; document.head.appendChild(el); });
+}
+async function needFontkit() {
+  for (const src of FONTKIT_URLS) {
+    if (window.fontkit) return;
+    try { await loadScript(src); } catch {}
+  }
+  if (!window.fontkit) throw { title: "โหลดฟอนต์ภาษาไทยไม่สำเร็จ", body: "ตรวจอินเทอร์เน็ต แล้วกดแปลอีกครั้ง" };
+}
+async function loadFonts(doc, thai) {
+  const { StandardFonts } = PDFLib;
+  if (!thai) {
+    return { reg: await doc.embedFont(StandardFonts.Helvetica), bold: await doc.embedFont(StandardFonts.HelveticaBold),
+      asc: 0.86, lh: 1.17, clean: latin1, raw: false };
+  }
+  await needFontkit();
+  doc.registerFontkit(window.fontkit);
+  const data = JSON.parse($("thaifont").textContent);
+  const reg = await doc.embedFont(decodeB64(data.regular)), bold = await doc.embedFont(decodeB64(data.bold));
+  const chars = new Set(reg.getCharacterSet());
+  const clean = (str) => {
+    let out = "";
+    for (const ch of str.normalize("NFC")) {
+      const c = ch.codePointAt(0);
+      if (c === 10 || chars.has(c)) out += ch;
+      else if (LATIN1[ch] !== undefined) out += LATIN1[ch];
+      else if (c >= 0x2460 && c <= 0x2473) out += "(" + (c - 0x245f) + ")";
+      else if (c >= 0x2000 && c <= 0x206f) out += " ";
+    }
+    return out.replace(/[ \t]+/g, " ").trim();
+  };
+  return { reg, bold, asc: 0.94, lh: 1.36, clean, raw: true };
+}
+
+const WIDTHS = new WeakMap();
+function tw(font, text, size) {                 // text width, cached per font
+  let m = WIDTHS.get(font);
+  if (!m) WIDTHS.set(font, (m = new Map()));
+  let w = m.get(text);
+  if (w === undefined) {
+    const fk = font.embedder?.font;
+    if (fk && typeof fk.layout === "function") {
+      const run = fk.layout(text); w = 0;
+      for (const p of run.positions) w += p.xAdvance;
+      w /= fk.unitsPerEm;
+    } else w = font.widthOfTextAtSize(text, 1);
+    m.set(text, w);
+  }
+  return w * size;
+}
+
+const FONT_KEYS = new WeakMap(), MAPPED = new WeakMap();                // page -> font -> resource name
+function drawLine(out, F, font, text, x, y, size, color) {
+  const { rgb } = PDFLib;
+  if (!F.raw) { out.drawText(text, { x, y, size, font, color: rgb(...color) }); return; }
+  const L = PDFLib, fk = font.embedder.font, k = size / fk.unitsPerEm;
+  let keys = FONT_KEYS.get(out);
+  if (!keys) FONT_KEYS.set(out, (keys = new Map()));
+  if (!keys.has(font)) { out.setFont(font); keys.set(font, out.fontKey); }
+  const ops = [L.pushGraphicsState(), L.beginText(), L.setFillingRgbColor(...color), L.setFontAndSize(keys.get(font), size)];
+  // glyphs reached only through the font's substitutions (ligatures, small
+  // tone marks) have no width in the PDF's font table: place them one by one
+  let mapped = MAPPED.get(fk);
+  if (!mapped) MAPPED.set(fk, (mapped = new Set(fk.characterSet.map((c) => fk.glyphForCodePoint(c).id))));
+  const run = fk.layout(text);
+  let pen = x, buf = "", bx = 0;
+  const flush = () => { if (buf) { ops.push(L.setTextMatrix(1, 0, 0, 1, bx, y), L.showText(L.PDFHexString.of(buf))); buf = ""; } };
+  run.glyphs.forEach((g, i) => {
+    const p = run.positions[i], hex = g.id.toString(16).padStart(4, "0");
+    if (p.xOffset || p.yOffset || !mapped.has(g.id)) {   // a positioned mark: its own spot
+      flush();
+      ops.push(L.setTextMatrix(1, 0, 0, 1, pen + p.xOffset * k, y + p.yOffset * k), L.showText(L.PDFHexString.of(hex)));
+    } else {
+      if (!buf) bx = pen;
+      buf += hex;
+      if (p.xAdvance !== g.advanceWidth) flush();   // kerning: restart at the exact pen position
+    }
+    pen += p.xAdvance * k;
+  });
+  flush();
+  ops.push(L.endText(), L.popGraphicsState());
+  out.pushOperators(...ops);
+}
+
+// Line breaking: at spaces, and between words for Thai (written without spaces).
+let THAI_SEG = null;
+function tokens(para) {
+  if (THAI_RE.test(para) && typeof Intl !== "undefined" && Intl.Segmenter) {
+    THAI_SEG ||= new Intl.Segmenter("th", { granularity: "word" });
+    return Array.from(THAI_SEG.segment(para), (x) => x.segment);
+  }
+  return para.split(/(\s+)/).filter(Boolean);
+}
 function wrap(text, font, size, width) {
   const lines = [];
   for (const para of text.split("\n")) {
     let cur = "";
-    for (const word of para.split(/\s+/).filter(Boolean)) {
-      const t = cur ? cur + " " + word : word;
-      if (font.widthOfTextAtSize(t, size) <= width || !cur) { cur = t; }
-      else { lines.push(cur); cur = word; }
+    for (const tok of tokens(para)) {
+      if (!tok.trim()) { if (cur) cur += " "; continue; }
+      const t = cur + tok;
+      if (!cur.trim() || tw(font, t, size) <= width) cur = t;
+      else { lines.push(cur.trimEnd()); cur = tok; }
     }
-    lines.push(cur);
+    lines.push(cur.trimEnd());
   }
-  const widest = Math.max(...lines.map((l) => font.widthOfTextAtSize(l, size)));
+  const widest = Math.max(...lines.map((l) => tw(font, l, size)));
   return { lines, widest };
 }
 
-function fit(bl, text, font) {
+function fit(bl, text, font, F) {
   const W = bl.right - bl.x0 - 0.5, H = bl.top - bl.floor, s0 = bl.size;
-  const ok = (s) => { const w = wrap(text, font, s, W); return w.widest <= W + 0.01 && w.lines.length * s * 1.17 <= H + 0.3 * s ? w : null; };
+  const ok = (s) => { const w = wrap(text, font, s, W); return w.widest <= W + 0.01 && w.lines.length * s * F.lh <= H + 0.3 * s ? w : null; };
   if (bl.lines.length === 1 && !text.includes("\n")) {           // keep one-liners on one line if possible
-    const s1 = Math.min(s0, s0 * W / Math.max(1, font.widthOfTextAtSize(text, s0)));
+    const s1 = Math.min(s0, s0 * W / Math.max(1, tw(font, text, s0)));
     if (s1 >= 0.78 * s0) return { size: s1, lines: [text] };
   }
   for (let s = s0; s >= Math.max(3, s0 * 0.4); s *= 0.96) { const w = ok(s); if (w) return { size: s, lines: w.lines }; }
@@ -630,6 +731,18 @@ function ruleLimits(ctx, vp, bl, bg) {
       if (n >= 0.85 * h) { bl.right = Math.max(bl.x1, bl.right - (w - x) / s - 1); break; }
     }
   }
+  // a vertical rule to the left (matters for centred text)
+  if (bl.center) {
+    const [lx] = vp.convertToViewportPoint(bl.left, bl.top);
+    const xl = Math.max(0, Math.round(lx)), xs = Math.round(cx) - 2;
+    if (xs > xl) {
+      const w = xs - xl + 1, h = yb - yt + 1, d = ctx.getImageData(xl, yt, w, h).data;
+      for (let x = w - 1; x >= 0; x--) {
+        let n = 0; for (let y = 0; y < h; y++) if (inkAt(d, (y * w + x) * 4)) n++;
+        if (n >= 0.85 * h) { bl.left = Math.min(bl.x0, (xl + x + 1) / s + 1); break; }
+      }
+    }
+  }
   // a horizontal rule below, spanning the text's width
   const startY = Math.min(yf, yb + 2);
   if (yf > startY) {
@@ -648,40 +761,39 @@ function ruleLimits(ctx, vp, bl, bg) {
 
 // "Translated title ......... 92": the title in front, dots filling the gap,
 // ending just before the original (untouched) page number.
-function tocLine(out, bl, text, font, dotFont, color) {
-  const s0 = bl.size;
+function tocLine(out, bl, text, font, F, color) {
+  const s0 = bl.size, dotFont = F.reg;
   if (bl.toc.guess) {
     // the number was drawn together with the leader, so it was covered too:
     // write it again, right-aligned where the original ended
-    const w = font.widthOfTextAtSize(bl.toc.num, s0);
-    bl.toc.numX0 = bl.toc.x1 - w;
-    out.drawText(bl.toc.num, { x: bl.toc.numX0, y: bl.base, size: s0, font, color });
+    bl.toc.numX0 = bl.toc.x1 - tw(font, bl.toc.num, s0);
+    drawLine(out, F, font, bl.toc.num, bl.toc.numX0, bl.base, s0, color);
   }
   const gap = 0.3 * s0, end = bl.toc.numX0 - gap;
-  const dotW = dotFont.widthOfTextAtSize(".", s0);
+  const dotW = tw(dotFont, ".", s0);
   const room = end - bl.x0 - 3 * dotW - 0.25 * s0;           // keep at least a short leader
   let size = s0, lines = [text];
-  const w0 = font.widthOfTextAtSize(text, s0);
+  const w0 = tw(font, text, s0);
   if (w0 > room) {
     size = s0 * room / w0;
     if (size < 0.72 * s0) {                                   // too long for one line: wrap if there is room below
       const H = bl.top - bl.floor;
       for (size = s0; size >= 0.5 * s0; size *= 0.96) {
         const w = wrap(text, font, size, room);
-        if (w.widest <= room && w.lines.length * size * 1.17 <= H + 0.3 * size) { lines = w.lines; break; }
+        if (w.widest <= room && w.lines.length * size * F.lh <= H + 0.3 * size) { lines = w.lines; break; }
       }
       if (size < 0.5 * s0) { size = Math.max(3, s0 * room / w0); lines = [text]; }
     }
   }
   let y = bl.base;
   lines.forEach((line, i) => {
-    out.drawText(line, { x: bl.x0, y, size, font, color });
+    drawLine(out, F, font, line, bl.x0, y, size, color);
     if (i === 0) {
-      const from = bl.x0 + font.widthOfTextAtSize(line, size) + 0.25 * s0;
+      const from = bl.x0 + tw(font, line, size) + 0.25 * s0;
       const n = Math.floor((end - from) / dotW);
-      if (n > 0) out.drawText(".".repeat(n), { x: end - n * dotW, y, size: s0, font: dotFont, color });
+      if (n > 0) drawLine(out, F, dotFont, ".".repeat(n), end - n * dotW, y, s0, color);
     }
-    y -= size * 1.17;
+    y -= size * F.lh;
   });
   return size;
 }
@@ -695,11 +807,10 @@ async function renderCanvas(page, scale) {
   return { cv, ctx, vp };
 }
 
-async function typeset(pages, bytes, onPage) {
-  const { PDFDocument, StandardFonts, rgb } = PDFLib;
+async function typeset(pages, bytes, thai, onPage) {
+  const { PDFDocument, rgb } = PDFLib;
   const doc = await PDFDocument.load(bytes, { ignoreEncryption: true });
-  const reg = await doc.embedFont(StandardFonts.Helvetica);
-  const bold = await doc.embedFont(StandardFonts.HelveticaBold);
+  const F = await loadFonts(doc, thai);
   let small = 0, placed = 0;
   for (let i = 0; i < pages.length; i++) {
     const pg = pages[i];
@@ -716,18 +827,19 @@ async function typeset(pages, bytes, onPage) {
         color: rgb(...colors[k].bg), borderWidth: 0 });
     });
     todo.forEach((bl, k) => {                                     // 2) write the translation
-      const font = bl.bold ? bold : reg;
-      const text = latin1(bl.out);
+      const font = bl.bold ? F.bold : F.reg;
+      const text = F.clean(bl.out);
       if (!text) return;
-      if (bl.toc) { if (tocLine(out, bl, text, font, reg, rgb(...colors[k].fg)) < bl.size * 0.97) small++; placed++; return; }
-      const f = fit(bl, text, font);
+      const color = colors[k].fg;
+      if (bl.toc) { if (tocLine(out, bl, text, font, F, color) < bl.size * 0.97) small++; placed++; return; }
+      const f = fit(bl, text, font, F);
       if (f.size < bl.size * 0.97) small++;
-      const lh = f.size * 1.17;
-      let y = bl.top - f.size * 0.86;
+      const lh = f.size * F.lh;
+      let y = bl.top - f.size * F.asc;
       for (const line of f.lines) {
-        const w = font.widthOfTextAtSize(line, f.size);
-        const x = bl.center ? (bl.left + bl.right) / 2 - w / 2 : bl.x0;
-        out.drawText(line, { x, y, size: f.size, font, color: rgb(...colors[k].fg) });
+        const w = tw(font, line, f.size);
+        const x = bl.center ? Math.max(bl.left, Math.min(bl.right - w, (bl.left + bl.right) / 2 - w / 2)) : bl.x0;
+        drawLine(out, F, font, line, x, y, f.size, color);
         y -= lh;
       }
       placed++;
@@ -739,7 +851,8 @@ async function typeset(pages, bytes, onPage) {
 // ------------------------------------------------------------------ run
 // ------------------------------------------------------------------ Google Translate (free web endpoint)
 const G_SRC = { zh: "zh-CN", ja: "ja", ko: "ko", th: "th", ru: "ru", any: "auto" };
-const G_TGT = { English: "en", French: "fr", German: "de", Spanish: "es", Italian: "it", Portuguese: "pt", Indonesian: "id", Malay: "ms" };
+const G_TGT = { English: "en", French: "fr", German: "de", Spanish: "es", Italian: "it", Portuguese: "pt", Indonesian: "id", Malay: "ms", Thai: "th" };
+const FONTKIT_URLS = ["__FONTKIT__", "https://cdn.jsdelivr.net/npm/@pdf-lib/fontkit@1.1.1/dist/fontkit.umd.min.js"];
 const G_URL = "https://translate.googleapis.com/translate_a/single?client=gtx&dt=t";
 const sleep = (ms, signal) => new Promise((ok, no) => {
   const t = setTimeout(ok, ms);
@@ -841,7 +954,7 @@ async function run() {
     $("s1d").textContent = `${nSel} หน้า${only ? ` (จาก ${pdf.numPages})` : ""} · พบ ${all.length.toLocaleString()} ข้อความที่ต้องแปล`;
     step(1, "done");
     if (!all.length) {
-      throw imageOnly ? { title: "ไม่พบตัวอักษรที่อ่านได้ในไฟล์นี้", body: "PDF นี้น่าจะเป็นภาพสแกนหรือตัวอักษรแบบเส้น ซึ่งไฟล์นี้ยังอ่านไม่ได้ — ใช้โปรแกรมเต็ม (มี OCR) หรือส่งไฟล์ให้ Claude ในแชท" }
+      throw imageOnly ? { title: "ไม่พบตัวอักษรที่อ่านได้ในไฟล์นี้", body: "PDF นี้น่าจะเป็นภาพสแกนหรือตัวอักษรแบบเส้น ซึ่งไฟล์นี้ยังอ่านไม่ได้ — ใช้โปรแกรมเต็ม (มี OCR) แทน" }
                       : { title: "ไม่พบข้อความภาษาต้นฉบับที่เลือก", body: "ตรวจว่าเลือกภาษาต้นฉบับถูกต้อง" };
     }
     // 2 --------------------------------------------------------------
@@ -867,7 +980,7 @@ async function run() {
     // 3 --------------------------------------------------------------
     step(3, "on");
     const nWork = pages.filter((pg) => pg.blocks.some((b) => b.translate && b.out)).length;
-    const out = await typeset(pages, S.bytes, (p) => { $("s3d").textContent = `วางคำแปลหน้า ${p} (${nWork} หน้า)`; });
+    const out = await typeset(pages, S.bytes, tl === "th", (p) => { $("s3d").textContent = `วางคำแปลหน้า ${p} (${nWork} หน้า)`; });
     step(3, "done");
     S.out = out.bytes;
     const first = Math.max(0, pages.findIndex((pg) => pg.blocks.some((bl) => bl.out)));
