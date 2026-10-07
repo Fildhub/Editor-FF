@@ -716,12 +716,12 @@ function sampleColors(ctx, vp, bl, pad) {
   if (x1 - x0 < 2 || y1 - y0 < 2) return { bg: [1, 1, 1], fg: [0, 0, 0] };
   const img = ctx.getImageData(x0, y0, x1 - x0 + 1, y1 - y0 + 1).data;
   const w = x1 - x0 + 1, h = y1 - y0 + 1;
-  const counts = new Map(); let dark = [];
+  const counts = new Map(); let dark = [], ring = 0;
   for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
     const i = (y * w + x) * 4, r = img[i], g = img[i + 1], b = img[i + 2];
     if (x === 0 || y === 0 || x === w - 1 || y === h - 1) {
       const k = (r >> 4) << 8 | (g >> 4) << 4 | (b >> 4);
-      const e = counts.get(k) || [0, 0, 0, 0]; e[0]++; e[1] += r; e[2] += g; e[3] += b; counts.set(k, e);
+      const e = counts.get(k) || [0, 0, 0, 0]; e[0]++; e[1] += r; e[2] += g; e[3] += b; counts.set(k, e); ring++;
     }
     dark.push([r + g + b, r, g, b]);
   }
@@ -732,12 +732,12 @@ function sampleColors(ctx, vp, bl, pad) {
   const top = dark.slice(0, Math.max(1, Math.floor(dark.length * 0.04)));
   const fg = [0, 1, 2].map((k) => top.reduce((s, p) => s + p[k + 1], 0) / top.length / 255);
   const lum = (c) => 0.3 * c[0] + 0.59 * c[1] + 0.11 * c[2];
-  return { bg, fg: Math.abs(lum(fg) - lum(bg)) < 0.25 ? (lum(bg) > 0.5 ? [0, 0, 0] : [1, 1, 1]) : fg };
+  return { bg, share: ring ? best[0] / ring : 1, fg: Math.abs(lum(fg) - lum(bg)) < 0.25 ? (lum(bg) > 0.5 ? [0, 0, 0] : [1, 1, 1]) : fg };
 }
 
 // Table borders are drawn, not text: find them on the rendered page and
 // keep each translation inside its own cell.
-function ruleLimits(ctx, vp, bl, bg) {
+function ruleLimits(ctx, vp, bl, bg, share = 1) {
   const W = ctx.canvas.width, Hc = ctx.canvas.height;
   const [ax, ay] = vp.convertToViewportPoint(bl.x1, bl.top);
   const [bx, by] = vp.convertToViewportPoint(bl.right, bl.bottom);
@@ -782,6 +782,50 @@ function ruleLimits(ctx, vp, bl, bg) {
       for (let y = 0; y < h; y++) {
         let n = 0; for (let x = 0; x < w; x++) if (inkAt(d, (y * w + x) * 4)) n++;
         if (n >= need) { bl.floor = Math.min(bl.bottom, bl.floor + (h - y) / s + 0.8); break; }
+      }
+    }
+  }
+}
+
+// Pictures and filled shapes are not text, so nothing above knows about them:
+// look for them on the rendered page to the right of and below the text and
+// keep the translation from growing into them.
+function objectLimits(ctx, vp, bl, bg) {
+  const W = ctx.canvas.width, Hc = ctx.canvas.height;
+  const [ax, ay] = vp.convertToViewportPoint(bl.x1, bl.top);
+  const [, by] = vp.convertToViewportPoint(bl.x1, bl.bottom);
+  const [cx] = vp.convertToViewportPoint(bl.x0, bl.top);
+  const [rx] = vp.convertToViewportPoint(bl.right, bl.top);
+  const [, fy] = vp.convertToViewportPoint(bl.x0, bl.floor);
+  const yt = Math.max(0, Math.round(ay)), yb = Math.min(Hc - 1, Math.round(by)), yf = Math.min(Hc - 1, Math.round(fy));
+  const xa = Math.max(0, Math.round(ax) + 3), xr = Math.min(W - 1, Math.round(rx)), x0 = Math.max(0, Math.round(cx));
+  if (yb - yt < 2) return;
+  const bgc = bg.map((v) => v * 255);
+  const ink = (d, i) => Math.max(Math.abs(d[i] - bgc[0]), Math.abs(d[i + 1] - bgc[1]), Math.abs(d[i + 2] - bgc[2])) > 16;      // low on purpose: photos of pale sky or walls are barely darker than the page
+  // 1) something to the right, anywhere in the height the text may use
+  if (xr - xa > 4 && yf > yt) {
+    const w = xr - xa + 1, h = yf - yt + 1;
+    if (w * h < 4e6) {
+      const d = ctx.getImageData(xa, yt, w, h).data, need = Math.max(3, 0.3 * (yb - yt));
+      let run = 0;
+      for (let x = 0; x < w; x++) {
+        let n = 0; for (let y = 0; y < h && n < need; y++) if (ink(d, (y * w + x) * 4)) n++;
+        run = n >= need ? run + 1 : 0;
+        if (run >= 3) { const lim = vp.convertToPdfPoint(xa + x - 2, 0)[0] - 4; bl.right = Math.max(bl.x1, Math.min(bl.right, lim)); break; }
+      }
+    }
+  }
+  // 2) something below, across the width the text may use
+  const [rx2] = vp.convertToViewportPoint(bl.right, bl.top), xr2 = Math.min(W - 1, Math.round(rx2));
+  if (xr2 - x0 > 4 && yf > yb + 3) {
+    const w = xr2 - x0 + 1, h = yf - (yb + 2) + 1;
+    if (w * h < 4e6) {
+      const d = ctx.getImageData(x0, yb + 2, w, h).data, need = 0.35 * Math.min(w, Math.max(8, (bl.x1 - bl.x0) * vp.scale));
+      let run = 0;
+      for (let y = 0; y < h; y++) {
+        let n = 0; for (let x = 0; x < w && n < need; x++) if (ink(d, (y * w + x) * 4)) n++;
+        run = n >= need ? run + 1 : 0;
+        if (run >= 3) { const edge = vp.convertToPdfPoint(0, yb + 2 + y - 2)[1]; bl.floor = Math.max(bl.floor, Math.min(bl.bottom, edge + 3)); break; }
       }
     }
   }
@@ -848,11 +892,22 @@ async function typeset(pages, bytes, thai, onPage) {
     const { ctx, vp } = await renderCanvas(pg.page, 2);
     const out = doc.getPage(i);
     const colors = todo.map((bl) => sampleColors(ctx, vp, bl, 1.2));
-    todo.forEach((bl, k) => { if (!bl.toc) ruleLimits(ctx, vp, bl, colors[k].bg); });
+    todo.forEach((bl, k) => {
+      if (bl.toc) return;
+      ruleLimits(ctx, vp, bl, colors[k].bg);
+      if (colors[k].share >= 0.5) objectLimits(ctx, vp, bl, colors[k].bg);        // not over a photo background
+    });
     todo.forEach((bl, k) => {                                     // 1) cover the original text
-      const pad = 0.6, x1 = bl.toc && !bl.toc.guess ? bl.toc.numX0 - 0.4 : bl.x1 + pad;   // a TOC page number stays
-      out.drawRectangle({ x: bl.x0 - pad, y: bl.bottom - pad, width: x1 - bl.x0 + pad, height: bl.top - bl.bottom + 2 * pad,
-        color: rgb(...colors[k].bg), borderWidth: 0 });
+      const pad = 0.6, color = rgb(...colors[k].bg);
+      if (bl.toc && !bl.toc.guess) {                              // a TOC page number stays
+        out.drawRectangle({ x: bl.x0 - pad, y: bl.bottom - pad, width: bl.toc.numX0 - 0.4 - bl.x0 + pad, height: bl.top - bl.bottom + 2 * pad, color, borderWidth: 0 });
+        return;
+      }
+      // one rectangle per text line, not one for the whole block: the ragged edge
+      // of a paragraph may sit next to a picture that must not be painted over
+      for (const ln of bl.lines) {
+        out.drawRectangle({ x: ln.x0 - pad, y: ln.bottom - pad, width: ln.x1 - ln.x0 + 2 * pad, height: ln.top - ln.bottom + 2 * pad, color, borderWidth: 0 });
+      }
     });
     todo.forEach((bl, k) => {                                     // 2) write the translation
       const font = bl.bold ? F.bold : F.reg;
