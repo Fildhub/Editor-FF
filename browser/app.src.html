@@ -197,10 +197,18 @@ __TOOLSCSS__
         <div class="langs">
           <select id="src" aria-label="ภาษาต้นฉบับ">
             <option value="zh" selected>จีน</option>
+            <option value="en">อังกฤษ</option>
             <option value="ja">ญี่ปุ่น</option>
             <option value="ko">เกาหลี</option>
             <option value="th">ไทย</option>
             <option value="ru">รัสเซีย</option>
+            <option value="fr">ฝรั่งเศส</option>
+            <option value="de">เยอรมัน</option>
+            <option value="es">สเปน</option>
+            <option value="it">อิตาลี</option>
+            <option value="pt">โปรตุเกส</option>
+            <option value="id">อินโดนีเซีย</option>
+            <option value="vi">เวียดนาม</option>
             <option value="any">อื่น ๆ (ตรวจอัตโนมัติ)</option>
           </select>
           <svg class="arrow" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
@@ -324,6 +332,10 @@ const SRC_RE = {
   ru: /[Ѐ-ӿ]/,
   any: /[^\W\d_]{2,}/u,
 };
+// Latin-script languages: a real word (3+ letters) that is not just a part code like "MH040A" or "RPM"
+const LATIN_WORD = /[A-Za-z\u00C0-\u024F\u1E00-\u1EFF]{3,}/;
+const LATIN = { test: (t) => LATIN_WORD.test(t) && (/\s/.test(t.trim()) || /[a-z\u00DF-\u024F\u1E00-\u1EFF]/.test(t)) };
+for (const k of ["en", "fr", "de", "es", "it", "pt", "id", "vi"]) SRC_RE[k] = LATIN;
 const NOSPACE = /[　-ヿ㐀-鿿가-힯＀-￯฀-๿]/;
 
 // ------------------------------------------------------------------ file choice
@@ -866,7 +878,7 @@ async function typeset(pages, bytes, thai, onPage) {
 
 // ------------------------------------------------------------------ run
 // ------------------------------------------------------------------ Google Translate (free web endpoint)
-const G_SRC = { zh: "zh-CN", ja: "ja", ko: "ko", th: "th", ru: "ru", any: "auto" };
+const G_SRC = { zh: "zh-CN", en: "en", ja: "ja", ko: "ko", th: "th", ru: "ru", fr: "fr", de: "de", es: "es", it: "it", pt: "pt", id: "id", vi: "vi", any: "auto" };
 const G_TGT = { English: "en", French: "fr", German: "de", Spanish: "es", Italian: "it", Portuguese: "pt", Indonesian: "id", Malay: "ms", Thai: "th" };
 const G_URL = "https://translate.googleapis.com/translate_a/single?client=gtx&dt=t";
 const sleep = (ms, signal) => new Promise((ok, no) => {
@@ -945,6 +957,17 @@ async function translateBatch(batch, sl, tl, signal) {
 }
 const fmtLeft = (sec) => sec < 60 ? "ไม่ถึง 1 นาที" : `ประมาณ ${Math.round(sec / 60)} นาที`;
 
+$("src").addEventListener("change", () => {            // English -> Thai, Thai -> English by default
+  const s = $("src").value, t = $("tgt");
+  if (s === "en" && t.value === "English") t.value = "Thai";
+  else if (s === "th" && t.value === "Thai") t.value = "English";
+  else if (s === "fr" && t.value === "French") t.value = "English";
+  else if (s === "de" && t.value === "German") t.value = "English";
+  else if (s === "es" && t.value === "Spanish") t.value = "English";
+  else if (s === "it" && t.value === "Italian") t.value = "English";
+  else if (s === "pt" && t.value === "Portuguese") t.value = "English";
+  else if (s === "id" && t.value === "Indonesian") t.value = "English";
+});
 $("go").addEventListener("click", run);
 $("stop").addEventListener("click", () => S.ctl?.abort());
 $("again").addEventListener("click", () => { view("empty"); $("saved").textContent = ""; });

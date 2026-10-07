@@ -185,15 +185,30 @@ tool({
         el.onclick = (e) => { const b = e.target.closest("button"); if (!b) return; opt[key] = key === "dpi" ? +b.dataset.v : b.dataset.v; el.querySelectorAll("button").forEach((x) => x.classList.toggle("on", x === b)); };
         return el;
       };
-      const pages = html(`<input type="text" placeholder="ทุกหน้า" autocomplete="off">`);
-      const go = primaryBtn("แปลงเป็นภาพ", "toimg");
+      const pages = html(`<input type="text" placeholder="เช่น 1-3, 5" autocomplete="off">`);
+      const go = primaryBtn("บันทึกเป็นภาพ", "toimg");
+      const count = html(`<div class="hint"></div>`);
+      let pg = null;
+      const upd = () => {
+        const n = pg ? pg.selected().length : 0;
+        count.textContent = n ? `เลือกแล้ว ${n} จาก ${doc.n} หน้า` : "ยังไม่ได้เลือกหน้า — คลิกที่หน้าทางขวา";
+        go.disabled = !n;
+        go.lastChild.textContent = n ? ` บันทึกเป็นภาพ (${n} หน้า)` : " บันทึกเป็นภาพ";
+      };
+      pg = pageGrid(ctx, doc, "extract", { onText: (t) => { pages.value = t; }, onChange: upd });
+      pages.addEventListener("input", () => { try { pg.setFromText(pages.value); ctx.clearFail(); } catch { /* still typing */ } });
+      const all = html(`<button class="mini" type="button">เลือกทั้งหมด</button>`), none = html(`<button class="mini" type="button">ไม่เลือก</button>`);
+      all.onclick = () => { pages.value = `1-${doc.n}`; pg.setFromText(pages.value); };
+      none.onclick = () => { pages.value = ""; pg.setFromText(""); };
       ctx.side.append(field("ชนิดไฟล์", seg("fmt", [["jpg", "JPG (เล็ก)"], ["png", "PNG (คมชัด)"]])),
         field("ความละเอียด", seg("dpi", [[100, "ต่ำ"], [150, "กลาง"], [220, "สูง"], [300, "สูงมาก"]]), "ยิ่งสูงยิ่งคมชัด ไฟล์ใหญ่ขึ้น"),
-        field("หน้าที่จะแปลง", pages, "เว้นว่าง = ทุกหน้า · เช่น 1-3, 5"), go);
-      const pg = pageGrid(ctx, doc, "view");
-      ctx.stage.append(pg.el);
+        field("หน้าที่จะบันทึก", pages, "คลิกเลือกหน้าที่รูปทางขวา หรือพิมพ์ช่วงหน้า"), count, go);
+      const bar = html(`<div class="gbar"><span class="muted">คลิกที่หน้าเพื่อเลือก / ยกเลิก</span><span class="spacer"></span></div>`);
+      bar.append(all, none);
+      ctx.stage.append(bar, pg.el);
+      all.click();                                   // start with every page selected
       go.onclick = () => ctx.run(async () => {
-        const list = pages.value.trim() ? rangePages(parseRanges(pages.value, doc.n)) : Array.from({ length: doc.n }, (_, i) => i + 1);
+        const list = pg.selected().map((it) => it.n);
         const mime = opt.fmt === "png" ? "image/png" : "image/jpeg", ext = opt.fmt === "png" ? "png" : "jpg", base = baseName(doc.name), files = [];
         for (let i = 0; i < list.length; i++) {
           ctx.busy(`กำลังแปลงหน้า ${list[i]} (${i + 1}/${list.length})`, i / list.length);
