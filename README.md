@@ -48,6 +48,8 @@ pip install -e ".[ocr]"
 - ยังไม่มี (เร็ว ๆ นี้): ลดขนาดไฟล์ · ใส่/ถอดรหัสผ่าน · OCR · ลบข้อมูลถาวร · ซ่อมไฟล์ · PDF → Word/Excel · Word/Excel/PowerPoint → PDF ทำในไฟล์เดียวไม่ได้เพราะต้องใช้ตัวแสดงผลของ Office
 - ต้องต่ออินเทอร์เน็ตตอนเปิดครั้งแรก เพราะดึง pdf.js / pdf-lib จาก CDN
 
+อัปขึ้นเว็บ (Cloudflare Pages / GitHub Pages ฯลฯ): ใช้โฟลเดอร์ `site/` ซึ่งมีแค่ `index.html` ไฟล์เดียว (สร้างอัตโนมัติจาก `browser/build.py`) · ถ้าเปิดสาธารณะ การแปลใช้ช่องทางไม่เป็นทางการของ Google จึงอาจถูกจำกัดเมื่อมีคนใช้เยอะ
+
 แก้โค้ดได้ที่ `browser/app.src.html` (หน้าหลัก + ตัวแปล) และ `browser/tools/*.js` / `tools.css` (เครื่องมืออื่น ๆ) แล้วสร้างใหม่ด้วย
 `python browser/build.py <pdfjs-dist>/cmaps`
 

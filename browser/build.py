@@ -57,6 +57,11 @@ def main() -> None:
     out = ROOT / "PDF-Tools.html"
     out.write_text(head + src + "\n</body>\n</html>\n", encoding="utf-8")
     print("written", out, out.stat().st_size, "bytes")
+    # ready-to-upload folder for static hosting (Cloudflare Pages, GitHub Pages ...): just index.html
+    site = ROOT / "site"
+    site.mkdir(exist_ok=True)
+    (site / "index.html").write_text(out.read_text("utf-8"), encoding="utf-8")
+    print("written", site / "index.html")
 
 
 if __name__ == "__main__":
