@@ -176,3 +176,18 @@ input[type="checkbox"] { accent-color: var(--accent); width: 16px; height: 16px;
 @media (max-width: 700px) { .cmpslots { grid-template-columns: 1fr; } }
 .cmpslot .lbl { margin-bottom: 8px; }
 .cmpslot .drop { padding: 36px 14px; }
+
+/* ---------- merge: cut pages out of one file */
+.fitem { display: grid; gap: 0; }
+.fitem.dragging { opacity: .4; }
+.fitem.dropat > .frow { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.cutpanel { margin: 6px 0 4px 18px; padding: 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
+.mini.on { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+.pgrid.small { grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 8px; max-height: 360px; overflow: auto; }
+.pgrid.small .pitem { padding: 5px; gap: 4px; }
+.pgrid.small .thumb { height: 120px; }
+.pgrid.small .pitem canvas { max-height: 120px; }
+.pgrid.small .pitem.del::after { font-size: 34px; inset: 5px 5px 24px; }
+.pgrid.small .pitem.picked::before { width: 20px; height: 20px; font-size: 12px; right: 8px; top: 8px; }
+.cutpanel .muted { flex: none; }
+.cutpanel .row input[type="text"] { min-width: 120px; }

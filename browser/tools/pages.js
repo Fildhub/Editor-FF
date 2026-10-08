@@ -35,7 +35,8 @@ function toRangeString(nums) {
 // modes: remove | extract | organize | rotate | view
 function pageGrid(ctx, doc, mode, extra = {}) {
   const items = Array.from({ length: doc.n }, (_, i) => ({ n: i + 1, rot: 0, del: false, pick: false }));
-  const grid = html(`<div class="pgrid"></div>`);
+  const grid = html(`<div class="pgrid${extra.small ? " small" : ""}"></div>`);
+  const TW = extra.small ? 96 : 150, TH = extra.small ? 120 : 170;
   const els = new Map();
   const organize = mode === "organize", rotMode = mode === "rotate" || organize, selMode = mode === "remove" || mode === "extract";
 
@@ -51,13 +52,13 @@ function pageGrid(ctx, doc, mode, extra = {}) {
       btn("right", "เลื่อนไปหลัง", () => move(items.indexOf(it), items.indexOf(it) + 1));
     }
     if (selMode) el.onclick = () => { toggle(it); };
-    lazyThumb(el.querySelector("canvas"), doc.view, it.n, 150, it.rot, 170);
+    lazyThumb(el.querySelector("canvas"), doc.view, it.n, TW, it.rot, TH);
     els.set(it, el);
     return el;
   }
   function rotate(it, d) {
     it.rot = (it.rot + d + 360) % 360;
-    redrawThumb(els.get(it).querySelector("canvas"), doc.view, it.n, 150, it.rot, 170);
+    redrawThumb(els.get(it).querySelector("canvas"), doc.view, it.n, TW, it.rot, TH);
     extra.onChange?.();
   }
   function move(from, to) {
@@ -93,9 +94,9 @@ function pageGrid(ctx, doc, mode, extra = {}) {
     },
     selected: () => items.filter((i) => (mode === "remove" ? i.del : i.pick)),
     kept: () => items.filter((i) => !i.del),
-    rotateAll(d) { items.forEach((it) => { it.rot = (it.rot + d + 360) % 360; redrawThumb(els.get(it).querySelector("canvas"), doc.view, it.n, 150, it.rot, 170); }); extra.onChange?.(); },
+    rotateAll(d) { items.forEach((it) => { it.rot = (it.rot + d + 360) % 360; redrawThumb(els.get(it).querySelector("canvas"), doc.view, it.n, TW, it.rot, TH); }); extra.onChange?.(); },
     reverse() { items.reverse(); layout(); },
-    refreshThumbs() { for (const [it, el] of els) redrawThumb(el.querySelector("canvas"), doc.view, it.n, 150, it.rot, 170); },
+    refreshThumbs() { for (const [it, el] of els) redrawThumb(el.querySelector("canvas"), doc.view, it.n, TW, it.rot, TH); },
   };
 }
 
@@ -177,7 +178,7 @@ arrangeTool("rotate", { title: "หมุนหน้า", desc: "หมุน�
 
 // ------------------------------------------------------------------ merge
 tool({
-  id: "merge", group: "organize", title: "รวม PDF", desc: "เอาหลายไฟล์มารวมเป็นไฟล์เดียว เรียงลำดับได้", icon: "merge",
+  id: "merge", group: "organize", title: "รวม PDF", desc: "เอาหลายไฟล์มารวมเป็นไฟล์เดียว เรียงลำดับได้ และตัดบางหน้าออกก่อนรวมได้", icon: "merge",
   init(ctx) {
     const files = [];
     let seq = 0;
@@ -204,36 +205,66 @@ tool({
         paint();
       }
     }
+    const keptOf = (f) => (f.pg ? f.pg.kept().map((x) => x.n) : Array.from({ length: f.n }, (_, i) => i + 1));
     function paint() {
       list.innerHTML = "";
       files.forEach((it, i) => {
-        const row = html(`<div class="frow" draggable="true" data-i="${i}"><span class="handle" title="ลากเพื่อเรียง">⋮⋮</span><div class="fthumb"><canvas></canvas></div>
-          <div class="fmeta"><div class="fname"></div><div class="fsub"></div></div><div class="fbtns"></div></div>`);
+        const item = html(`<div class="fitem" data-i="${i}"><div class="frow" draggable="true"><span class="handle" title="ลากเพื่อเรียง">⋮⋮</span><div class="fthumb"><canvas></canvas></div>
+          <div class="fmeta"><div class="fname"></div><div class="fsub"></div></div><div class="fbtns"></div></div></div>`);
+        const row = item.firstElementChild, sub = row.querySelector(".fsub");
         row.querySelector(".fname").textContent = it.name;
-        row.querySelector(".fsub").textContent = it.err ? it.err : it.n ? `${it.n} หน้า · ${fmtSize(it.size)}` : "กำลังอ่าน…";
-        if (it.err) row.querySelector(".fsub").style.color = "var(--err)";
+        it.subEl = sub; setSub(it);
         const bt = row.querySelector(".fbtns");
-        const mk = (ic, t, fn, dis) => { const b = html(`<button class="ibtn" type="button" title="${t}" aria-label="${t}" ${dis ? "disabled" : ""}>${icon(ic, 15)}</button>`); b.onclick = fn; bt.append(b); };
+        const mk = (ic, t, fn, dis) => { const b = html(`<button class="ibtn" type="button" title="${t}" aria-label="${t}" ${dis ? "disabled" : ""}>${icon(ic, 15)}</button>`); b.onclick = fn; bt.append(b); return b; };
+        if (it.lib) {
+          const cut = html(`<button class="mini${it.open ? " on" : ""}" type="button">${icon("remove", 14)} ตัดหน้าออก</button>`);
+          cut.onclick = () => { it.open = !it.open; paint(); };
+          bt.append(cut);
+        }
         mk("up", "เลื่อนขึ้น", () => { [files[i - 1], files[i]] = [files[i], files[i - 1]]; paint(); }, i === 0);
         mk("down", "เลื่อนลง", () => { [files[i + 1], files[i]] = [files[i], files[i + 1]]; paint(); }, i === files.length - 1);
         mk("x", "เอาออก", () => { files.splice(i, 1); if (!files.length) ctx.reset(); else paint(); });
         if (it.view) lazyThumb(row.querySelector("canvas"), it.view, 1, 52, 0, 68);
-        list.append(row);
+        if (it.open && it.lib) item.append(cutPanel(it));
+        list.append(item);
       });
-      const ok = files.filter((f) => f.lib);
-      const pages = ok.reduce((s, f) => s + f.n, 0);
+      totals();
+    }
+    function setSub(it) {
+      const kept = it.n ? keptOf(it).length : 0;
+      it.subEl.textContent = it.err ? it.err : !it.n ? "กำลังอ่าน…" : kept === it.n ? `${it.n} หน้า · ${fmtSize(it.size)}` : kept ? `เหลือ ${kept} จาก ${it.n} หน้า (ตัดออก ${it.n - kept})` : "ตัดออกหมดทุกหน้า — ไม่นำไฟล์นี้ไปรวม";
+      it.subEl.style.color = it.err || (it.n && !kept) ? "var(--err)" : "";
+    }
+    function totals() {
+      const ok = files.filter((f) => f.lib && keptOf(f).length);
+      const pages = ok.reduce((s, f) => s + keptOf(f).length, 0);
       sum.textContent = `${files.length} ไฟล์ · รวม ${pages} หน้า`;
       go.disabled = ok.length < 2 || files.some((f) => !f.lib && !f.err);
-      if (ok.length < 2) sum.textContent += " · เลือกอย่างน้อย 2 ไฟล์";
+      if (ok.length < 2) sum.textContent += " · ต้องมีอย่างน้อย 2 ไฟล์ที่เหลือหน้า";
+    }
+    // thumbnails of one file: click the pages to cut out (or type a range)
+    function cutPanel(it) {
+      if (!it.pg) {
+        it.range = html(`<input type="text" placeholder="เช่น 2, 5-6" autocomplete="off">`);
+        it.pg = pageGrid(ctx, it, "remove", { small: true, onText: (t) => { it.range.value = t; }, onChange: () => { if (it.pg) { setSub(it); totals(); } } });
+        it.range.addEventListener("input", () => { try { it.pg.setFromText(it.range.value); it.range.style.borderColor = ""; } catch { it.range.style.borderColor = "var(--err)"; } });
+      }
+      const panel = html(`<div class="cutpanel"><div class="row" style="margin-bottom:10px"><span class="muted" style="white-space:nowrap">หน้าที่จะตัดออก</span></div></div>`);
+      const clear = html(`<button class="mini" type="button">เอาคืนทั้งหมด</button>`);
+      clear.onclick = () => { it.range.value = ""; it.pg.setFromText(""); };
+      panel.firstElementChild.append(it.range, clear);
+      panel.append(html(`<div class="hint" style="margin:0 0 8px">คลิกที่หน้าเพื่อเลือกตัดออก (ขึ้น ✕ สีแดง) · คลิกอีกครั้งเพื่อเอาคืน</div>`), it.pg.el);
+      return panel;
     }
     go.onclick = () => ctx.run(async () => {
       const out = await PLIB().PDFDocument.create();
-      for (const f of files.filter((x) => x.lib)) {
-        const pgs = await out.copyPages(f.lib, f.lib.getPageIndices());
+      for (const f of files.filter((x) => x.lib && keptOf(x).length)) {
+        const pgs = await out.copyPages(f.lib, keptOf(f).map((n) => n - 1));
         pgs.forEach((p) => out.addPage(p));
         await tick();
       }
-      await showResult(ctx, { title: `รวม ${files.length} ไฟล์แล้ว`, files: [{ name: "รวมไฟล์.pdf", mime: "application/pdf", bytes: await savePdf(out) }] });
+      const cut = files.reduce((s, f) => s + (f.lib ? f.n - keptOf(f).length : 0), 0);
+      await showResult(ctx, { title: `รวม ${files.filter((x) => x.lib && keptOf(x).length).length} ไฟล์แล้ว${cut ? ` (ตัดออก ${cut} หน้า)` : ""}`, files: [{ name: "รวมไฟล์.pdf", mime: "application/pdf", bytes: await savePdf(out) }] });
     }, "กำลังรวมไฟล์…");
   },
 });
