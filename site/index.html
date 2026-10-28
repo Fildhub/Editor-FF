@@ -316,7 +316,7 @@ input[type="checkbox"] { accent-color: var(--accent); width: 16px; height: 16px;
 .edpage { position: relative; line-height: 0; box-shadow: 0 2px 12px rgba(0,0,0,.2); background: #fff; }
 .edpage canvas { display: block; }
 .edov { position: absolute; inset: 0; touch-action: none; }
-.edov[data-tool="text"], .edov[data-tool="rect"], .edov[data-tool="ellipse"], .edov[data-tool="line"], .edov[data-tool="draw"], .edov[data-tool="hl"], .edov[data-tool="cover"] { cursor: crosshair; }
+.edov[data-tool="ref"], .edov[data-tool="text"], .edov[data-tool="rect"], .edov[data-tool="ellipse"], .edov[data-tool="line"], .edov[data-tool="draw"], .edov[data-tool="hl"], .edov[data-tool="cover"] { cursor: crosshair; }
 .eo { position: absolute; box-sizing: border-box; line-height: 1.25; }
 .e-text { white-space: pre; font-family: "IBM Plex Sans Thai", Arial, Helvetica, sans-serif; cursor: move; padding: 0; min-width: 8px; }
 .e-text.editing { cursor: text; outline: 1px dashed var(--accent); }
@@ -360,6 +360,9 @@ input[type="checkbox"] { accent-color: var(--accent); width: 16px; height: 16px;
 .pgrid.small .pitem.picked::before { width: 20px; height: 20px; font-size: 12px; right: 8px; top: 8px; }
 .cutpanel .muted { flex: none; }
 .cutpanel .row input[type="text"] { min-width: 120px; }
+
+.refchips { display: flex; flex-wrap: wrap; gap: 6px; }
+.trbox { display: grid; gap: 14px; }
 
 </style>
 
@@ -663,7 +666,7 @@ function parsePages(spec, n) {
   return set.size ? set : null;
 }
 
-async function analyse(pdf, srcRe, only, onPage) {
+async function analyse(pdf, srcRe, only, onPage, keepOther) {
   const pages = [];
   for (let p = 1; p <= pdf.numPages; p++) {
     if (only && !only.has(p)) { pages.push({ page: null, view: null, blocks: [], chars: -1 }); continue; }
@@ -683,7 +686,7 @@ async function analyse(pdf, srcRe, only, onPage) {
         bold: /bold|black|heavy|semibold|demi|[-,]b$/i.test(fname) && !/light/i.test(fname) });
     }
     const lines = groupLines(items);
-    const blocks = groupBlocks(lines);
+    const blocks = groupBlocks(lines, keepOther ? srcRe : null);
     pages.push({ page, view: page.view, rotate: page.rotate, blocks, chars: items.reduce((n, i) => n + i.str.length, 0) });
   }
   for (const pg of pages) {
@@ -752,7 +755,7 @@ function tocEntry(ln) {
 
 const BULLET = /^\s*([·•・●○◆■□▪※*\-–]|[①-⑳]|\(?\d{1,2}[.)、．]|[（(][0-9一二三四五六七八九十]{1,3}[)）])/;
 
-function groupBlocks(lines) {
+function groupBlocks(lines, splitRe) {
   lines.sort((p, q) => q.top - p.top || p.x0 - q.x0);
   const blocks = [];
   for (const ln of lines) {
@@ -769,6 +772,7 @@ function groupBlocks(lines) {
         if (Math.min(last.x1, ln.x1) - Math.max(last.x0, ln.x0) <= 0) continue;
         if (Math.abs(ln.x0 - bl.lines[bl.lines.length > 1 ? 1 : 0].x0) > 1.5 * size && !(bl.lines.length === 1 && ln.x0 < last.x0)) continue;
         if (/[：:]$/.test(last.text)) continue;
+        if (splitRe && splitRe.test(last.text) !== splitRe.test(ln.text)) continue;   // keep e.g. the English line under a Chinese one as its own block
         host = bl; break;
       }
     }
@@ -1289,57 +1293,69 @@ $("go").addEventListener("click", run);
 $("stop").addEventListener("click", () => S.ctl?.abort());
 $("again").addEventListener("click", () => { view("empty"); $("saved").textContent = ""; });
 
+// The whole translation as one function, so other tools can use it too:
+// read -> translate -> typeset. ui = { step(n, state), s1(text), s2(text, fraction), s3(text) }.
+async function pipeline(bytes, { srcKey, tgtName, pagesSpec = "", signal, ui = {}, keepOther = false }) {
+  const say = { step: () => {}, s1: () => {}, s2: () => {}, s3: () => {}, ...ui };
+  if (!window.pdfjsLib || !window.PDFLib) throw { title: "โหลดส่วนประกอบของหน้าเว็บไม่สำเร็จ", body: "ตรวจอินเทอร์เน็ต แล้วโหลดหน้านี้ใหม่" };
+  // 1 --------------------------------------------------------------
+  say.step(1, "on");
+  const pdf = await pdfjsLib.getDocument({ data: bytes.slice(0), isEvalSupported: false, CMapReaderFactory: EmbeddedCMaps, useWorkerFetch: false }).promise;
+  const only = parsePages(pagesSpec, pdf.numPages);
+  const pages = await analyse(pdf, SRC_RE[srcKey], only, (p) => say.s1(`อ่านหน้า ${p} จาก ${pdf.numPages}`), keepOther);
+  const all = pages.flatMap((pg, i) => pg.blocks.filter((b) => b.translate).map((b, k) => Object.assign(b, { id: `p${i + 1}-${k + 1}` })));
+  const imageOnly = pages.filter((pg) => pg.chars >= 0 && pg.chars < 5).length;
+  const nSel = only ? only.size : pdf.numPages;
+  say.s1(`${nSel} หน้า${only ? ` (จาก ${pdf.numPages})` : ""} · พบ ${all.length.toLocaleString()} ข้อความที่ต้องแปล`);
+  say.step(1, "done");
+  if (!all.length) {
+    throw imageOnly ? { title: "ไม่พบตัวอักษรที่อ่านได้ในไฟล์นี้", body: "PDF นี้น่าจะเป็นภาพสแกนหรือตัวอักษรแบบเส้น ซึ่งไฟล์นี้ยังอ่านไม่ได้ — ใช้โปรแกรมเต็ม (มี OCR) แทน" }
+                    : { title: "ไม่พบข้อความภาษาต้นฉบับที่เลือก", body: "ตรวจว่าเลือกภาษาต้นฉบับถูกต้อง" };
+  }
+  // 2 --------------------------------------------------------------
+  say.step(2, "on");
+  const sl = G_SRC[srcKey] || "auto", tl = G_TGT[tgtName] || "en";
+  const jobs = gBatches(all);
+  let done = 0, next = 0;
+  const t2 = performance.now();
+  const worker = async () => {
+    while (next < jobs.length) {
+      const job = jobs[next++];
+      await translateBatch(job, sl, tl, signal);
+      await sleep(300, signal);                    // be gentle: Google blocks bursts
+      done += job.length;
+      const rate = done / Math.max(1, (performance.now() - t2) / 1000);
+      say.s2(`แปลแล้ว ${done.toLocaleString()} จาก ${all.length.toLocaleString()} ข้อความ · เหลือ${fmtLeft((all.length - done) / Math.max(rate, 0.01))}`, done / all.length);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(2, jobs.length) }, worker));
+  say.s2(`แปลแล้ว ${all.filter((b) => b.out).length} จาก ${all.length} ข้อความ`, 1);
+  say.step(2, "done");
+  // 3 --------------------------------------------------------------
+  say.step(3, "on");
+  const nWork = pages.filter((pg) => pg.blocks.some((b) => b.translate && b.out)).length;
+  const out = await typeset(pages, bytes, tl === "th", (p) => say.s3(`วางคำแปลหน้า ${p} (${nWork} หน้า)`));
+  say.step(3, "done");
+  const first = Math.max(0, pages.findIndex((pg) => pg.blocks.some((bl) => bl.out)));
+  return { pdf, out, nPages: pages.length, imageOnly, first, translated: all.filter((b) => b.out).length };
+}
+
 async function run() {
   if (!S.bytes) return;
   view("work"); showMsg("w-msg"); [1, 2, 3].forEach((n) => step(n, ""));
   $("w-title").textContent = "กำลังแปล…"; $("s2bar").style.width = "0";
   $("go").disabled = true; $("stop").hidden = false;
   S.ctl = new AbortController(); S.t0 = performance.now(); S.timer = setInterval(tick, 500); tick();
-  const srcSel = $("src"), tgt = $("tgt").value;
-    try {
-    if (!window.pdfjsLib || !window.PDFLib) throw { title: "โหลดส่วนประกอบของหน้าเว็บไม่สำเร็จ", body: "ตรวจอินเทอร์เน็ต แล้วโหลดหน้านี้ใหม่" };
-    // 1 --------------------------------------------------------------
-    step(1, "on");
-    const pdf = await pdfjsLib.getDocument({ data: S.bytes.slice(0), isEvalSupported: false, CMapReaderFactory: EmbeddedCMaps, useWorkerFetch: false }).promise;
-    const only = parsePages($("pages").value, pdf.numPages);
-    const pages = await analyse(pdf, SRC_RE[srcSel.value], only, (p) => { $("s1d").textContent = `อ่านหน้า ${p} จาก ${pdf.numPages}`; });
-    const all = pages.flatMap((pg, i) => pg.blocks.filter((b) => b.translate).map((b, k) => Object.assign(b, { id: `p${i + 1}-${k + 1}` })));
-    const imageOnly = pages.filter((pg) => pg.chars >= 0 && pg.chars < 5).length;
-    const nSel = only ? only.size : pdf.numPages;
-    $("s1d").textContent = `${nSel} หน้า${only ? ` (จาก ${pdf.numPages})` : ""} · พบ ${all.length.toLocaleString()} ข้อความที่ต้องแปล`;
-    step(1, "done");
-    if (!all.length) {
-      throw imageOnly ? { title: "ไม่พบตัวอักษรที่อ่านได้ในไฟล์นี้", body: "PDF นี้น่าจะเป็นภาพสแกนหรือตัวอักษรแบบเส้น ซึ่งไฟล์นี้ยังอ่านไม่ได้ — ใช้โปรแกรมเต็ม (มี OCR) แทน" }
-                      : { title: "ไม่พบข้อความภาษาต้นฉบับที่เลือก", body: "ตรวจว่าเลือกภาษาต้นฉบับถูกต้อง" };
-    }
-    // 2 --------------------------------------------------------------
-    step(2, "on");
-    const sl = G_SRC[srcSel.value] || "auto", tl = G_TGT[tgt] || "en";
-    const jobs = gBatches(all);
-    let done = 0, next = 0;
-    const t2 = performance.now();
-    const worker = async () => {
-      while (next < jobs.length) {
-        const job = jobs[next++];
-        await translateBatch(job, sl, tl, S.ctl.signal);
-        await sleep(300, S.ctl.signal);            // be gentle: Google blocks bursts
-        done += job.length;
-        const rate = done / Math.max(1, (performance.now() - t2) / 1000);
-        $("s2d").textContent = `แปลแล้ว ${done.toLocaleString()} จาก ${all.length.toLocaleString()} ข้อความ · เหลือ${fmtLeft((all.length - done) / Math.max(rate, 0.01))}`;
-        $("s2bar").style.width = (100 * done / all.length) + "%";
-      }
-    };
-    await Promise.all(Array.from({ length: Math.min(2, jobs.length) }, worker));
-    $("s2d").textContent = `แปลแล้ว ${all.filter((b) => b.out).length} จาก ${all.length} ข้อความ`;
-    step(2, "done");
-    // 3 --------------------------------------------------------------
-    step(3, "on");
-    const nWork = pages.filter((pg) => pg.blocks.some((b) => b.translate && b.out)).length;
-    const out = await typeset(pages, S.bytes, tl === "th", (p) => { $("s3d").textContent = `วางคำแปลหน้า ${p} (${nWork} หน้า)`; });
-    step(3, "done");
-    S.out = out.bytes;
-    const first = Math.max(0, pages.findIndex((pg) => pg.blocks.some((bl) => bl.out)));
-    await showResult(pdf, out, pages.length, imageOnly, first);
+  try {
+    const r = await pipeline(S.bytes, {
+      srcKey: $("src").value, tgtName: $("tgt").value, pagesSpec: $("pages").value, signal: S.ctl.signal,
+      ui: {
+        step, s1: (t) => { $("s1d").textContent = t; }, s3: (t) => { $("s3d").textContent = t; },
+        s2: (t, f) => { $("s2d").textContent = t; $("s2bar").style.width = (100 * f) + "%"; },
+      },
+    });
+    S.out = r.out.bytes;
+    await showResult(r.pdf, r.out, r.nPages, r.imageOnly, r.first);
   } catch (e) {
     if ((e && e.code === "cancelled") || S.ctl.signal.aborted) { view("empty"); }
     else {
@@ -1385,7 +1401,7 @@ $("next").addEventListener("click", () => { if (S.page < S.pages - 1) { S.page++
 // pieces the other tools share (see browser/tools/)
 window.PDFX = {
   openPdf: (bytes) => pdfjsLib.getDocument({ data: bytes.slice(0), isEvalSupported: false, CMapReaderFactory: EmbeddedCMaps, useWorkerFetch: false }).promise,
-  loadFonts, drawLine, tw, latin1,
+  loadFonts, drawLine, tw, latin1, translate: pipeline,
 };
 
 $("download").addEventListener("click", () => {
@@ -1450,6 +1466,7 @@ const ICONS = {
   text: '<path d="M5 6V4h14v2M12 4v16M9 20h6"/>', rect: '<rect x="4" y="5" width="16" height="14" rx="1"/>', ellipse: '<ellipse cx="12" cy="12" rx="9" ry="7"/>',
   line: '<path d="M5 19 19 5"/>', pen: '<path d="M3 21c3 0 4-3 6-3 2 0 2 3 4 3M14 4l6 6L10 20H4v-6z"/>', highlight: '<path d="m9 11 6 6M5 21l4-1 10-10-3-3L6 17z" /><path d="M14 4l6 6"/>',
   cover: '<rect x="4" y="5" width="16" height="14" rx="1" fill="currentColor" fill-opacity=".25"/>', cursor: '<path d="m5 3 14 8-6 1.500L10 19z"/>',
+  tag: '<path d="M3 12V4a1 1 0 0 1 1-1h8l9 9a1.500 1.500 0 0 1 0 2.100l-5.900 5.900a1.500 1.500 0 0 1-2.100 0z"/><circle cx="8" cy="8" r="1.400"/>',
   zoomin: '<circle cx="11" cy="11" r="7"/><path d="m21 21-4.500-4.500M11 8v6M8 11h6"/>', zoomout: '<circle cx="11" cy="11" r="7"/><path d="m21 21-4.500-4.500M8 11h6"/>',
 };
 const icon = (n, s = 20) => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[n] || ""}</svg>`;
@@ -1477,7 +1494,7 @@ tool({ id: "translate", group: "translate", title: "แปล PDF", desc: "แ�
 
 let current = null;           // the open generic tool instance
 const ORDER = ["translate", "merge", "split", "remove", "extract", "organize", "rotate", "crop", "img2pdf", "scan", "pdf2img",
-  "edit", "sign", "pagenum", "watermark", "compare"];
+  "edit", "drawing", "sign", "pagenum", "watermark", "compare"];
 function renderHome() {
   const home = $("home");
   home.innerHTML = "";
@@ -1566,12 +1583,12 @@ function explain(e) {
 const readBytes = async (f) => new Uint8Array(await f.arrayBuffer());
 const isPdf = (f) => /\.pdf$/i.test(f.name) || f.type === "application/pdf";
 const isImage = (f) => /^image\//.test(f.type) || /\.(jpe?g|png|webp|gif|bmp|avif)$/i.test(f.name);
-const KINDS = { pdf: [isPdf, "ไฟล์ PDF"], image: [isImage, "ไฟล์ภาพ"], any: [() => true, "ไฟล์"] };
+const KINDS = { pdf: [isPdf, "ไฟล์ PDF"], image: [isImage, "ไฟล์ภาพ"], pdfimg: [(f) => isPdf(f) || isImage(f), "ไฟล์ PDF หรือภาพ"], any: [() => true, "ไฟล์"] };
 
 // big drop zone; calls onFiles(files[]) with only the files of the right kind
 function dropZone({ kind = "pdf", multiple = false, title, hint, onFiles, capture = false }) {
   const [ok, what] = KINDS[kind];
-  const accept = kind === "pdf" ? "application/pdf,.pdf" : kind === "image" ? "image/*" : "";
+  const accept = kind === "pdf" ? "application/pdf,.pdf" : kind === "image" ? "image/*" : kind === "pdfimg" ? "application/pdf,.pdf,image/*" : "";
   const z = html(`<label class="drop big"><input type="file" hidden ${multiple ? "multiple" : ""} accept="${accept}" ${capture ? 'capture="environment"' : ""}>
     ${icon("upload", 38)}<b>${esc(title || (multiple ? "กดเพื่อเลือกไฟล์ หรือลากมาวาง" : "กดเพื่อเลือกไฟล์ หรือลากมาวาง"))}</b>
     <span>${esc(hint || "ไฟล์อยู่ในเครื่องคุณ ไม่ถูกอัปโหลดที่ไหน")}</span><em class="dzerr"></em></label>`);
@@ -2675,7 +2692,7 @@ function editorTool(id, { title, desc, ic, sign }) {
 editorTool("edit", { title: "แก้ไข PDF", desc: "เพิ่มข้อความ รูป รูปทรง ไฮไลต์ วาดด้วยปากกา หรือปิดทับของเดิม", ic: "edit" });
 editorTool("sign", { title: "ลงลายเซ็น", desc: "เซ็นด้วยเมาส์/นิ้ว พิมพ์ชื่อ หรืออัปโหลดลายเซ็น แล้ววางลงบนเอกสาร", ic: "sign", sign: true });
 
-function runEditor(ctx, doc, { sign }) {
+function runEditor(ctx, doc, { sign, drawing, suffix }) {
   const pages = new Map();                       // page number -> [objects]
   const imgs = new Map();                        // image id -> {bytes, mime, w, h, url}
   const D = {                                    // defaults for new objects
@@ -2683,7 +2700,10 @@ function runEditor(ctx, doc, { sign }) {
     rect: { stroke: "#e11d48", sw: 2, fill: null, op: 1 }, ellipse: { stroke: "#e11d48", sw: 2, fill: null, op: 1 },
     line: { stroke: "#e11d48", sw: 3, arrow: false }, draw: { stroke: "#1d4ed8", sw: 3 },
     hl: { fill: "#ffe14d", op: 0.4 }, cover: { fill: "#ffffff" }, img: { op: 1 },
+    ref: { size: 18, color: "#1d3fd8" },
   };
+  if (drawing) D.hl = { fill: "#ff9a2e", op: 0.55 };                // orange marker, like on the printed drawing
+  let refN = 1;                                                      // next "Ref#" number to place
   let userZoom = false, cur = 1, z = 1, tool_ = "select", sel = null, uid = 0, pageW = 0, pageH = 0, editing = null;
   let undo = [], redo = [], snap = "[]";
   const objs = () => { if (!pages.has(cur)) pages.set(cur, []); return pages.get(cur); };
@@ -2691,7 +2711,8 @@ function runEditor(ctx, doc, { sign }) {
   // ---------- layout
   const bar = html(`<div class="edbar"></div>`);
   const toolBtns = {};
-  for (const [k, ic, t] of ED_TOOLS) {
+  const toolList = drawing ? [ED_TOOLS[0], ["ref", "tag", "ป้าย Ref#"], ...ED_TOOLS.slice(1)] : ED_TOOLS;
+  for (const [k, ic, t] of toolList) {
     const b = html(`<button class="ibtn" type="button" title="${t}" aria-label="${t}">${icon(ic, 17)}</button>`);
     b.onclick = () => setTool(k); toolBtns[k] = b; bar.append(b);
   }
@@ -2751,7 +2772,7 @@ function runEditor(ctx, doc, { sign }) {
   const SVGNS = "http://www.w3.org/2000/svg";
   function paintObj(o, el) {
     const s = (p) => p * z;
-    el.className = "eo e-" + o.t + (sel === o ? " esel" : "");
+    el.className = "eo e-" + o.t + (o.ref ? " ref" : "") + (sel === o ? " esel" : "");
     el.style.cssText = "";
     el.innerHTML = "";
     if (o.t === "text") {
@@ -2856,6 +2877,11 @@ function runEditor(ctx, doc, { sign }) {
     }
     e.preventDefault();
     const p0 = point(e);
+    if (tool_ === "ref") {                               // a numbered tag; stays armed for the next number
+      const o = { u: ++uid, t: "text", ref: true, text: `Ref#${refN}`, x: p0.x, y: p0.y - D.ref.size * 0.6, size: D.ref.size, color: D.ref.color, bold: true };
+      objs().push(o); commit(); refN++; renderAll(); renderProps();
+      return;
+    }
     if (tool_ === "text") {
       const o = { u: ++uid, t: "text", x: p0.x, y: p0.y - D.text.size * 0.6, text: "ข้อความ", ...D.text };
       objs().push(o); setTool("select"); select(o); setTimeout(() => startEdit(o, true), 0);
@@ -2930,6 +2956,7 @@ function runEditor(ctx, doc, { sign }) {
       props.append(html(`<div class="note">${sign ? "กดปุ่ม <b>ลายเซ็น</b> ด้านบนเพื่อสร้างหรือเลือกลายเซ็น แล้วลากไปวางบนหน้ากระดาษ" : "เลือกเครื่องมือจากแถบด้านบน แล้วคลิก/ลากบนหน้ากระดาษ · ดับเบิลคลิกข้อความเพื่อแก้ไข · ถ้าจะแก้ข้อความเดิม ใช้ “ปิดทับ” แล้วพิมพ์ทับ (ข้อความเดิมยังอยู่ใต้แผ่นปิดในไฟล์ ไม่ได้ถูกลบจริง)"}</div>`));
       actions.innerHTML = ""; return;
     }
+    if (kind === "ref") { renderRefProps(); return; }
     const t = sel || D[kind], onEdit = (live) => { if (sel) repaint(sel); if (!live) { if (sel) commit(); } };
     const addColor = (label, key, nullable) => {
       const i = html(`<input type="color" value="${t[key] || "#000000"}">`);
@@ -2969,6 +2996,22 @@ function runEditor(ctx, doc, { sign }) {
         commit(); actions.lastChild.lastChild.textContent = " ใส่แล้ว ✓";
       });
     }
+  }
+  function renderRefProps() {
+    props.append(html(`<p class="side-title">ป้าย Ref#</p>`));
+    const chips = html(`<div class="refchips"></div>`);
+    for (let n = 1; n <= 10; n++) {
+      const b = html(`<button type="button" class="mini${n === refN ? " on" : ""}">Ref#${n}</button>`);
+      b.onclick = () => { refN = n; renderProps(); };
+      chips.append(b);
+    }
+    props.append(field("เลือกเลขที่จะวางต่อไป", chips, `คลิกบนแบบเพื่อวางป้าย Ref#${refN} (เลขเพิ่มเองทีละ 1) · ย้ายป้ายได้ด้วยเครื่องมือ “เลือก”`));
+    const size = html(`<input type="range" min="8" max="60" step="1" value="${D.ref.size}">`), sv = html(`<span class="muted" style="width:46px;text-align:right">${D.ref.size} pt</span>`);
+    size.oninput = () => { D.ref.size = +size.value; sv.textContent = size.value + " pt"; };
+    const sr = html(`<div class="row"></div>`); sr.append(size, sv); props.append(field("ขนาดป้าย", sr));
+    const col = html(`<input type="color" value="${D.ref.color}">`); col.oninput = () => { D.ref.color = col.value; };
+    props.append(field("สีป้าย", col), html(`<div class="hint">ไฮไลต์จุดสำคัญด้วยเครื่องมือ “ไฮไลต์” (สีส้ม) และลากเส้นชี้ด้วย “เส้น / ลูกศร” ได้</div>`));
+    actions.innerHTML = "";
   }
   function shift(o, d) { if (o.t === "line") { o.x1 += d; o.x2 += d; o.y1 += d; o.y2 += d; } else if (o.t === "draw") o.pts = o.pts.map((q) => [q[0] + d, q[1] + d]); else { o.x += d; o.y += d; } }
   function delSel() { if (!sel) return; pages.set(cur, objs().filter((x) => x !== sel)); sel = null; commit(); renderAll(); renderProps(); }
@@ -3050,10 +3093,10 @@ function runEditor(ctx, doc, { sign }) {
       }
       sp.leave();
     }
-    await showResult(ctx, { title: sign ? "ลงลายเซ็นแล้ว" : "บันทึกการแก้ไขแล้ว", files: [{ name: `${baseName(doc.name)}${sign ? "_เซ็น" : "_แก้ไข"}.pdf`, mime: "application/pdf", bytes: await savePdf(out) }] });
+    await showResult(ctx, { title: sign ? "ลงลายเซ็นแล้ว" : drawing ? "ทำ Drawing เสร็จแล้ว" : "บันทึกการแก้ไขแล้ว", files: [{ name: `${baseName(doc.name)}${suffix || (sign ? "_เซ็น" : "_แก้ไข")}.pdf`, mime: "application/pdf", bytes: await savePdf(out) }] });
   }, "กำลังบันทึก…");
 
-  setTool("select");
+  setTool(drawing ? "ref" : "select");
   showPage(1, true).then(() => { if (sign) sigBtn.click(); });
 }
 
@@ -3153,6 +3196,84 @@ function signatureDialog(onDone) {
     close(); onDone({ bytes: dataUrlBytes(url), w, h });
   };
 }
+
+// ===================================================================== Drawing: translate + Ref# tags
+// A drawing / datasheet sheet: optionally translate its text (same engine as the
+// translator tool), then mark key values with numbered "Ref#" tags and orange
+// highlights, and save. Photos / scans can be tagged too, but not translated (no OCR).
+
+async function photoToPdf(file) {
+  const bmp = await loadBitmap(file), [w, h] = bmpSize(bmp);
+  const im = await imageForPdf({ bmp, file, name: file.name, rot: 0 }, "none");
+  const out = await PLIB().PDFDocument.create();
+  const emb = im.mime === "image/png" ? await out.embedPng(im.bytes) : await out.embedJpg(im.bytes);
+  const page = out.addPage([im.w * 0.75, im.h * 0.75]);
+  page.drawImage(emb, { x: 0, y: 0, width: im.w * 0.75, height: im.h * 0.75 });
+  return savePdf(out);
+}
+
+tool({
+  id: "drawing", group: "edit", title: "ทำ Drawing (แปล + ป้าย Ref#)", icon: "tag",
+  desc: "แปลข้อความในแบบ แล้วติดป้าย Ref#1, 2, 3 … และไฮไลต์จุดสำคัญ เหมือนที่ขีดเขียนบนกระดาษ",
+  init(ctx) {
+    ctx.stage.innerHTML = "";
+    ctx.stage.append(dropZone({
+      kind: "pdfimg", title: "เลือกไฟล์ Drawing (PDF หรือภาพถ่าย)",
+      hint: "PDF แปลข้อความได้ · ภาพถ่าย/สแกนติดป้ายได้อย่างเดียว (ยังแปลไม่ได้ ต้องมี OCR)",
+      onFiles: async ([f]) => {
+        const isImg = !isPdf(f);
+        const doc = await ctx.run(async () => loadOne(isImg ? new File([await photoToPdf(f)], baseName(f.name) + ".pdf", { type: "application/pdf" }) : f), "กำลังอ่านไฟล์…");
+        if (doc) options(doc, isImg);
+      },
+    }));
+
+    function options(doc, isImg) {
+      ctx.side.innerHTML = ""; ctx.stage.innerHTML = ""; ctx.work();
+      ctx.side.append(fileChip(doc.name, `${doc.n} หน้า · ${fmtSize(doc.bytes.length)}`, () => ctx.reset()));
+      const useTr = html(`<label class="chk"><input type="checkbox" ${isImg ? "disabled" : "checked"}> แปลข้อความในแบบ</label>`);
+      const src = $("src").cloneNode(true), tgt = $("tgt").cloneNode(true);
+      src.removeAttribute("id"); tgt.removeAttribute("id"); src.value = "zh"; tgt.value = "Thai";
+      const pages = html(`<input type="text" placeholder="ทุกหน้า" autocomplete="off">`);
+      const box = html(`<div class="trbox"></div>`);
+      const keep = html(`<label class="chk"><input type="checkbox" checked> คงบรรทัดภาษาอื่นไว้ (เช่น อังกฤษใต้ภาษาจีน) — ได้แบบสองภาษา</label>`);
+      box.append(field("แปลจาก", src), field("แปลเป็น", tgt), keep, field("หน้าที่จะแปล", pages, "เว้นว่าง = ทุกหน้า"));
+      const syncKeep = () => { keep.hidden = src.value === "any"; };
+      src.addEventListener("change", syncKeep); syncKeep();
+      const go = primaryBtn(isImg ? "ไปติดป้าย Ref#" : "ต่อไป: ติดป้าย Ref#", "tag");
+      useTr.querySelector("input").onchange = (e) => { box.hidden = !e.target.checked; go.lastChild.textContent = ` ${e.target.checked ? "แปลแล้วไปติดป้าย Ref#" : "ไปติดป้าย Ref#"}`; };
+      if (isImg) box.hidden = true;
+      const note = html(`<div class="note"></div>`);
+      note.textContent = isImg
+        ? "ไฟล์นี้เป็นภาพ จึงแปลข้อความไม่ได้ — ติดป้าย Ref# และไฮไลต์ได้ตามปกติ ถ้าต้องการแปล ให้ใช้ไฟล์ PDF ต้นฉบับของแบบ"
+        : "ตั้งค่าเริ่มต้น: แปลเฉพาะบรรทัดภาษาจีนเป็นไทย ส่วนบรรทัดภาษาอังกฤษ ตัวเลข และรหัสรุ่นคงเดิม";
+      ctx.side.append(useTr, box, note, go);
+      if (!isImg) go.lastChild.textContent = " แปลแล้วไปติดป้าย Ref#";
+
+      const pv = html(`<div class="pvwrap"><div class="pv"><canvas></canvas></div></div>`);
+      ctx.stage.append(html(`<div class="muted" style="margin-bottom:8px">ตัวอย่างหน้าแรก</div>`), pv);
+      doc.view.getPage(1).then((p) => renderPageTo(p, pv.querySelector("canvas"), Math.min(560, Math.max(260, ctx.stage.clientWidth - 70))));
+
+      go.onclick = async () => {
+        let useDoc = doc;
+        if (useTr.querySelector("input").checked && !isImg) {
+          const ctl = new AbortController(); ctx.onClose(() => ctl.abort());
+          const r = await ctx.run(() => PDFX.translate(doc.bytes, {
+            srcKey: src.value, tgtName: tgt.value, pagesSpec: pages.value, signal: ctl.signal, keepOther: keep.querySelector("input").checked && src.value !== "any",
+            ui: {
+              s1: (t) => ctx.busy("1/3 " + t), s2: (t, f) => ctx.busy("2/3 " + t, f), s3: (t) => ctx.busy("3/3 " + t),
+            },
+          }), "กำลังแปล…");
+          if (!r) return;                                             // an error is shown on the page; the user can switch translation off
+          useDoc = await ctx.run(() => loadOne(new File([r.out.bytes], doc.name, { type: "application/pdf" })), "กำลังเปิดผลการแปล…");
+          if (!useDoc) return;
+        }
+        ctx.side.innerHTML = ""; ctx.stage.innerHTML = "";
+        ctx.side.append(fileChip(useDoc.name, `${useDoc.n} หน้า`, () => ctx.reset()));
+        runEditor(ctx, useDoc, { drawing: true, suffix: "_Drawing" });
+      };
+    }
+  },
+});
 
 // ===================================================================== compare
 // two PDFs: word-level text differences + pixel differences, page by page

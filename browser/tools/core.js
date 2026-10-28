@@ -45,6 +45,7 @@ const ICONS = {
   text: '<path d="M5 6V4h14v2M12 4v16M9 20h6"/>', rect: '<rect x="4" y="5" width="16" height="14" rx="1"/>', ellipse: '<ellipse cx="12" cy="12" rx="9" ry="7"/>',
   line: '<path d="M5 19 19 5"/>', pen: '<path d="M3 21c3 0 4-3 6-3 2 0 2 3 4 3M14 4l6 6L10 20H4v-6z"/>', highlight: '<path d="m9 11 6 6M5 21l4-1 10-10-3-3L6 17z" /><path d="M14 4l6 6"/>',
   cover: '<rect x="4" y="5" width="16" height="14" rx="1" fill="currentColor" fill-opacity=".25"/>', cursor: '<path d="m5 3 14 8-6 1.500L10 19z"/>',
+  tag: '<path d="M3 12V4a1 1 0 0 1 1-1h8l9 9a1.500 1.500 0 0 1 0 2.100l-5.900 5.900a1.500 1.500 0 0 1-2.100 0z"/><circle cx="8" cy="8" r="1.400"/>',
   zoomin: '<circle cx="11" cy="11" r="7"/><path d="m21 21-4.500-4.500M11 8v6M8 11h6"/>', zoomout: '<circle cx="11" cy="11" r="7"/><path d="m21 21-4.500-4.500M8 11h6"/>',
 };
 const icon = (n, s = 20) => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[n] || ""}</svg>`;
@@ -72,7 +73,7 @@ tool({ id: "translate", group: "translate", title: "แปล PDF", desc: "แ�
 
 let current = null;           // the open generic tool instance
 const ORDER = ["translate", "merge", "split", "remove", "extract", "organize", "rotate", "crop", "img2pdf", "scan", "pdf2img",
-  "edit", "sign", "pagenum", "watermark", "compare"];
+  "edit", "drawing", "sign", "pagenum", "watermark", "compare"];
 function renderHome() {
   const home = $("home");
   home.innerHTML = "";
@@ -161,12 +162,12 @@ function explain(e) {
 const readBytes = async (f) => new Uint8Array(await f.arrayBuffer());
 const isPdf = (f) => /\.pdf$/i.test(f.name) || f.type === "application/pdf";
 const isImage = (f) => /^image\//.test(f.type) || /\.(jpe?g|png|webp|gif|bmp|avif)$/i.test(f.name);
-const KINDS = { pdf: [isPdf, "ไฟล์ PDF"], image: [isImage, "ไฟล์ภาพ"], any: [() => true, "ไฟล์"] };
+const KINDS = { pdf: [isPdf, "ไฟล์ PDF"], image: [isImage, "ไฟล์ภาพ"], pdfimg: [(f) => isPdf(f) || isImage(f), "ไฟล์ PDF หรือภาพ"], any: [() => true, "ไฟล์"] };
 
 // big drop zone; calls onFiles(files[]) with only the files of the right kind
 function dropZone({ kind = "pdf", multiple = false, title, hint, onFiles, capture = false }) {
   const [ok, what] = KINDS[kind];
-  const accept = kind === "pdf" ? "application/pdf,.pdf" : kind === "image" ? "image/*" : "";
+  const accept = kind === "pdf" ? "application/pdf,.pdf" : kind === "image" ? "image/*" : kind === "pdfimg" ? "application/pdf,.pdf,image/*" : "";
   const z = html(`<label class="drop big"><input type="file" hidden ${multiple ? "multiple" : ""} accept="${accept}" ${capture ? 'capture="environment"' : ""}>
     ${icon("upload", 38)}<b>${esc(title || (multiple ? "กดเพื่อเลือกไฟล์ หรือลากมาวาง" : "กดเพื่อเลือกไฟล์ หรือลากมาวาง"))}</b>
     <span>${esc(hint || "ไฟล์อยู่ในเครื่องคุณ ไม่ถูกอัปโหลดที่ไหน")}</span><em class="dzerr"></em></label>`);

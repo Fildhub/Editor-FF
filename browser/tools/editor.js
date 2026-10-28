@@ -21,7 +21,7 @@ function editorTool(id, { title, desc, ic, sign }) {
 editorTool("edit", { title: "แก้ไข PDF", desc: "เพิ่มข้อความ รูป รูปทรง ไฮไลต์ วาดด้วยปากกา หรือปิดทับของเดิม", ic: "edit" });
 editorTool("sign", { title: "ลงลายเซ็น", desc: "เซ็นด้วยเมาส์/นิ้ว พิมพ์ชื่อ หรืออัปโหลดลายเซ็น แล้ววางลงบนเอกสาร", ic: "sign", sign: true });
 
-function runEditor(ctx, doc, { sign }) {
+function runEditor(ctx, doc, { sign, drawing, suffix }) {
   const pages = new Map();                       // page number -> [objects]
   const imgs = new Map();                        // image id -> {bytes, mime, w, h, url}
   const D = {                                    // defaults for new objects
@@ -29,7 +29,10 @@ function runEditor(ctx, doc, { sign }) {
     rect: { stroke: "#e11d48", sw: 2, fill: null, op: 1 }, ellipse: { stroke: "#e11d48", sw: 2, fill: null, op: 1 },
     line: { stroke: "#e11d48", sw: 3, arrow: false }, draw: { stroke: "#1d4ed8", sw: 3 },
     hl: { fill: "#ffe14d", op: 0.4 }, cover: { fill: "#ffffff" }, img: { op: 1 },
+    ref: { size: 18, color: "#1d3fd8" },
   };
+  if (drawing) D.hl = { fill: "#ff9a2e", op: 0.55 };                // orange marker, like on the printed drawing
+  let refN = 1;                                                      // next "Ref#" number to place
   let userZoom = false, cur = 1, z = 1, tool_ = "select", sel = null, uid = 0, pageW = 0, pageH = 0, editing = null;
   let undo = [], redo = [], snap = "[]";
   const objs = () => { if (!pages.has(cur)) pages.set(cur, []); return pages.get(cur); };
@@ -37,7 +40,8 @@ function runEditor(ctx, doc, { sign }) {
   // ---------- layout
   const bar = html(`<div class="edbar"></div>`);
   const toolBtns = {};
-  for (const [k, ic, t] of ED_TOOLS) {
+  const toolList = drawing ? [ED_TOOLS[0], ["ref", "tag", "ป้าย Ref#"], ...ED_TOOLS.slice(1)] : ED_TOOLS;
+  for (const [k, ic, t] of toolList) {
     const b = html(`<button class="ibtn" type="button" title="${t}" aria-label="${t}">${icon(ic, 17)}</button>`);
     b.onclick = () => setTool(k); toolBtns[k] = b; bar.append(b);
   }
@@ -97,7 +101,7 @@ function runEditor(ctx, doc, { sign }) {
   const SVGNS = "http://www.w3.org/2000/svg";
   function paintObj(o, el) {
     const s = (p) => p * z;
-    el.className = "eo e-" + o.t + (sel === o ? " esel" : "");
+    el.className = "eo e-" + o.t + (o.ref ? " ref" : "") + (sel === o ? " esel" : "");
     el.style.cssText = "";
     el.innerHTML = "";
     if (o.t === "text") {
@@ -202,6 +206,11 @@ function runEditor(ctx, doc, { sign }) {
     }
     e.preventDefault();
     const p0 = point(e);
+    if (tool_ === "ref") {                               // a numbered tag; stays armed for the next number
+      const o = { u: ++uid, t: "text", ref: true, text: `Ref#${refN}`, x: p0.x, y: p0.y - D.ref.size * 0.6, size: D.ref.size, color: D.ref.color, bold: true };
+      objs().push(o); commit(); refN++; renderAll(); renderProps();
+      return;
+    }
     if (tool_ === "text") {
       const o = { u: ++uid, t: "text", x: p0.x, y: p0.y - D.text.size * 0.6, text: "ข้อความ", ...D.text };
       objs().push(o); setTool("select"); select(o); setTimeout(() => startEdit(o, true), 0);
@@ -276,6 +285,7 @@ function runEditor(ctx, doc, { sign }) {
       props.append(html(`<div class="note">${sign ? "กดปุ่ม <b>ลายเซ็น</b> ด้านบนเพื่อสร้างหรือเลือกลายเซ็น แล้วลากไปวางบนหน้ากระดาษ" : "เลือกเครื่องมือจากแถบด้านบน แล้วคลิก/ลากบนหน้ากระดาษ · ดับเบิลคลิกข้อความเพื่อแก้ไข · ถ้าจะแก้ข้อความเดิม ใช้ “ปิดทับ” แล้วพิมพ์ทับ (ข้อความเดิมยังอยู่ใต้แผ่นปิดในไฟล์ ไม่ได้ถูกลบจริง)"}</div>`));
       actions.innerHTML = ""; return;
     }
+    if (kind === "ref") { renderRefProps(); return; }
     const t = sel || D[kind], onEdit = (live) => { if (sel) repaint(sel); if (!live) { if (sel) commit(); } };
     const addColor = (label, key, nullable) => {
       const i = html(`<input type="color" value="${t[key] || "#000000"}">`);
@@ -315,6 +325,22 @@ function runEditor(ctx, doc, { sign }) {
         commit(); actions.lastChild.lastChild.textContent = " ใส่แล้ว ✓";
       });
     }
+  }
+  function renderRefProps() {
+    props.append(html(`<p class="side-title">ป้าย Ref#</p>`));
+    const chips = html(`<div class="refchips"></div>`);
+    for (let n = 1; n <= 10; n++) {
+      const b = html(`<button type="button" class="mini${n === refN ? " on" : ""}">Ref#${n}</button>`);
+      b.onclick = () => { refN = n; renderProps(); };
+      chips.append(b);
+    }
+    props.append(field("เลือกเลขที่จะวางต่อไป", chips, `คลิกบนแบบเพื่อวางป้าย Ref#${refN} (เลขเพิ่มเองทีละ 1) · ย้ายป้ายได้ด้วยเครื่องมือ “เลือก”`));
+    const size = html(`<input type="range" min="8" max="60" step="1" value="${D.ref.size}">`), sv = html(`<span class="muted" style="width:46px;text-align:right">${D.ref.size} pt</span>`);
+    size.oninput = () => { D.ref.size = +size.value; sv.textContent = size.value + " pt"; };
+    const sr = html(`<div class="row"></div>`); sr.append(size, sv); props.append(field("ขนาดป้าย", sr));
+    const col = html(`<input type="color" value="${D.ref.color}">`); col.oninput = () => { D.ref.color = col.value; };
+    props.append(field("สีป้าย", col), html(`<div class="hint">ไฮไลต์จุดสำคัญด้วยเครื่องมือ “ไฮไลต์” (สีส้ม) และลากเส้นชี้ด้วย “เส้น / ลูกศร” ได้</div>`));
+    actions.innerHTML = "";
   }
   function shift(o, d) { if (o.t === "line") { o.x1 += d; o.x2 += d; o.y1 += d; o.y2 += d; } else if (o.t === "draw") o.pts = o.pts.map((q) => [q[0] + d, q[1] + d]); else { o.x += d; o.y += d; } }
   function delSel() { if (!sel) return; pages.set(cur, objs().filter((x) => x !== sel)); sel = null; commit(); renderAll(); renderProps(); }
@@ -396,10 +422,10 @@ function runEditor(ctx, doc, { sign }) {
       }
       sp.leave();
     }
-    await showResult(ctx, { title: sign ? "ลงลายเซ็นแล้ว" : "บันทึกการแก้ไขแล้ว", files: [{ name: `${baseName(doc.name)}${sign ? "_เซ็น" : "_แก้ไข"}.pdf`, mime: "application/pdf", bytes: await savePdf(out) }] });
+    await showResult(ctx, { title: sign ? "ลงลายเซ็นแล้ว" : drawing ? "ทำ Drawing เสร็จแล้ว" : "บันทึกการแก้ไขแล้ว", files: [{ name: `${baseName(doc.name)}${suffix || (sign ? "_เซ็น" : "_แก้ไข")}.pdf`, mime: "application/pdf", bytes: await savePdf(out) }] });
   }, "กำลังบันทึก…");
 
-  setTool("select");
+  setTool(drawing ? "ref" : "select");
   showPage(1, true).then(() => { if (sign) sigBtn.click(); });
 }
 

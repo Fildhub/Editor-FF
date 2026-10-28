@@ -147,7 +147,7 @@ input[type="checkbox"] { accent-color: var(--accent); width: 16px; height: 16px;
 .edpage { position: relative; line-height: 0; box-shadow: 0 2px 12px rgba(0,0,0,.2); background: #fff; }
 .edpage canvas { display: block; }
 .edov { position: absolute; inset: 0; touch-action: none; }
-.edov[data-tool="text"], .edov[data-tool="rect"], .edov[data-tool="ellipse"], .edov[data-tool="line"], .edov[data-tool="draw"], .edov[data-tool="hl"], .edov[data-tool="cover"] { cursor: crosshair; }
+.edov[data-tool="ref"], .edov[data-tool="text"], .edov[data-tool="rect"], .edov[data-tool="ellipse"], .edov[data-tool="line"], .edov[data-tool="draw"], .edov[data-tool="hl"], .edov[data-tool="cover"] { cursor: crosshair; }
 .eo { position: absolute; box-sizing: border-box; line-height: 1.25; }
 .e-text { white-space: pre; font-family: "IBM Plex Sans Thai", Arial, Helvetica, sans-serif; cursor: move; padding: 0; min-width: 8px; }
 .e-text.editing { cursor: text; outline: 1px dashed var(--accent); }
@@ -191,3 +191,6 @@ input[type="checkbox"] { accent-color: var(--accent); width: 16px; height: 16px;
 .pgrid.small .pitem.picked::before { width: 20px; height: 20px; font-size: 12px; right: 8px; top: 8px; }
 .cutpanel .muted { flex: none; }
 .cutpanel .row input[type="text"] { min-width: 120px; }
+
+.refchips { display: flex; flex-wrap: wrap; gap: 6px; }
+.trbox { display: grid; gap: 14px; }
