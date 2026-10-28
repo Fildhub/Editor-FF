@@ -45,6 +45,7 @@ const ICONS = {
   text: '<path d="M5 6V4h14v2M12 4v16M9 20h6"/>', rect: '<rect x="4" y="5" width="16" height="14" rx="1"/>', ellipse: '<ellipse cx="12" cy="12" rx="9" ry="7"/>',
   line: '<path d="M5 19 19 5"/>', pen: '<path d="M3 21c3 0 4-3 6-3 2 0 2 3 4 3M14 4l6 6L10 20H4v-6z"/>', highlight: '<path d="m9 11 6 6M5 21l4-1 10-10-3-3L6 17z" /><path d="M14 4l6 6"/>',
   cover: '<rect x="4" y="5" width="16" height="14" rx="1" fill="currentColor" fill-opacity=".25"/>', cursor: '<path d="m5 3 14 8-6 1.500L10 19z"/>',
+  link: '<path d="M10 14a4 4 0 0 0 5.700 0l3-3a4 4 0 0 0-5.700-5.700l-1 1"/><path d="M14 10a4 4 0 0 0-5.700 0l-3 3a4 4 0 0 0 5.700 5.700l1-1"/>',
   tag: '<path d="M3 12V4a1 1 0 0 1 1-1h8l9 9a1.500 1.500 0 0 1 0 2.100l-5.900 5.900a1.500 1.500 0 0 1-2.100 0z"/><circle cx="8" cy="8" r="1.400"/>',
   zoomin: '<circle cx="11" cy="11" r="7"/><path d="m21 21-4.500-4.500M11 8v6M8 11h6"/>', zoomout: '<circle cx="11" cy="11" r="7"/><path d="m21 21-4.500-4.500M8 11h6"/>',
 };
@@ -89,6 +90,7 @@ function renderHome() {
   const soon = html(`<div class="hgroup soongroup"><h2>กำลังจะมา</h2><div class="tcards"></div></div>`);
   for (const t of SOON) soon.querySelector(".tcards").append(html(`<div class="tcard soon g-${t.group}" aria-disabled="true"><span class="ticon">${icon(t.icon, 22)}</span><span class="ttxt"><b>${esc(t.title)}</b><span>${esc(t.desc)}</span></span></div>`));
   home.append(soon);
+  home.append(html(`<p class="hfoot"><a href="#/links">${icon("link", 15)} ลิงก์ลัด / ทางลัดไปแต่ละเครื่องมือ</a></p>`));
 }
 function closeCurrent() {
   if (current) { for (const f of current.closers.splice(0)) { try { f(); } catch {} } current = null; }

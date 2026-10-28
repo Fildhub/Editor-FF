@@ -194,3 +194,14 @@ input[type="checkbox"] { accent-color: var(--accent); width: 16px; height: 16px;
 
 .refchips { display: flex; flex-wrap: wrap; gap: 6px; }
 .trbox { display: grid; gap: 14px; }
+
+/* ---------- shortcut links */
+.hfoot { margin: 26px 0 0; text-align: center; }
+.hfoot a { color: var(--accent); font-weight: 600; text-decoration: none; display: inline-flex; gap: 6px; align-items: center; }
+.linklist { display: grid; gap: 8px; }
+.linkrow { display: grid; grid-template-columns: minmax(130px, 200px) minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface-2); }
+.linkrow .lname { font-weight: 600; font-size: 14px; }
+.linkrow input { font-family: var(--mono); font-size: 12.5px; }
+.lbtns { display: flex; gap: 6px; }
+a.mini { text-decoration: none; color: inherit; }
+@media (max-width: 760px) { .linkrow { grid-template-columns: minmax(0, 1fr); } }

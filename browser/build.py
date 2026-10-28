@@ -16,7 +16,7 @@ from PIL import Image
 
 ROOT = Path(__file__).resolve().parent.parent
 VENDOR = ROOT / "browser" / "vendor"
-TOOL_FILES = ["core.js", "pages.js", "convert.js", "stamp.js", "editor.js", "drawing.js", "compare.js"]
+TOOL_FILES = ["core.js", "pages.js", "convert.js", "stamp.js", "editor.js", "drawing.js", "compare.js", "links.js"]
 
 # Content Security Policy: no remote scripts, no frames, no plugins; the only
 # network call is Google Translate. ('unsafe-inline' is needed because the app
