@@ -1244,6 +1244,15 @@ const BLOCKED = {
   title: "Google Translate ไม่ตอบ (น่าจะถูกจำกัดการใช้งานชั่วคราว)",
   body: "Google จะบล็อกชั่วคราวเมื่อมีการแปลจำนวนมากจากเครื่องเดียว เช่นหลังลองแปลไฟล์ใหญ่ — รอประมาณ 30-60 นาทีแล้วกดแปลอีกครั้ง หรือลองเปิด translate.google.com ดูว่าใช้งานได้ไหม · ถ้าอินเทอร์เน็ตมีปัญหา ให้ตรวจการเชื่อมต่อด้วย",
 };
+// Remember why the last request failed, so the error on screen says exactly what happened.
+let lastNetProblem = "";
+document.addEventListener("securitypolicyviolation", (e) => {
+  if (/translate/.test(e.blockedURI || "")) lastNetProblem = `ถูกนโยบายความปลอดภัยของหน้าเว็บบล็อก (${e.violatedDirective}: ${e.blockedURI})`;
+});
+function netError(extra) {
+  if (navigator.onLine === false) return { net: true, title: "ไม่ได้เชื่อมต่ออินเทอร์เน็ต", body: "การแปลต้องต่ออินเทอร์เน็ต — ต่อเน็ตแล้วกดแปลอีกครั้ง (เครื่องมืออื่นใช้ได้โดยไม่ต้องต่อเน็ต)" };
+  return { net: true, title: BLOCKED.title, body: `${BLOCKED.body}\nรายละเอียด: ${extra || lastNetProblem || "ไม่ทราบสาเหตุ"}` };
+}
 async function google(text, sl, tl, signal) {
   const url = `${G_URL}&sl=${sl}&tl=${tl}`;
   for (let attempt = 0; attempt < 5; attempt++) {
@@ -1256,14 +1265,17 @@ async function google(text, sl, tl, signal) {
       if (signal?.aborted) throw { code: "cancelled" };
       // The browser hides Google's reply when it is an error page (rate
       // limit, request too long): it looks like a network failure.
-      if (attempt === 2) throw { net: true, ...BLOCKED };
+      if (!/นโยบาย/.test(lastNetProblem)) lastNetProblem = `เชื่อมต่อ translate.googleapis.com ไม่ได้ (${e?.name || "Error"}: ${e?.message || e}) — มักเกิดจาก Google จำกัดการใช้งาน หรือเน็ต/ไฟร์วอลล์บล็อก`;
+      if (attempt === 2) throw netError();
       await sleep(1500 * 2 ** attempt, signal); continue;
     }
     if (r.status === 429 || r.status >= 500) {
-      if (attempt === 4) throw BLOCKED;
+      lastNetProblem = `Google ตอบกลับ HTTP ${r.status}${r.status === 429 ? " (ใช้งานเกินกำหนด)" : ""}`;
+      if (attempt === 4) { const e = netError(); delete e.net; throw e; }
       await sleep(1500 * 2 ** attempt, signal); continue;
     }
     if (!r.ok) throw { title: `Google Translate ตอบกลับผิดพลาด (${r.status})`, body: "ลองกดแปลอีกครั้ง" };
+    lastNetProblem = "";
     const data = await r.json();
     return (Array.isArray(data?.[0]) ? data[0] : []).map((p) => (p && p[0]) || "").join("");
   }
