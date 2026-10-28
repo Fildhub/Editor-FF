@@ -387,7 +387,7 @@ function runEditor(ctx, doc, { sign, drawing, suffix }) {
     const { PDFDocument, rgb, degrees, BlendMode, LineCapStyle } = PLIB();
     const out = await PDFDocument.load(doc.bytes, { ignoreEncryption: true, updateMetadata: false });
     const all = [...pages.entries()].filter(([, l]) => l.length);
-    if (!all.length) throw { title: "ยังไม่ได้เพิ่มอะไรลงในเอกสาร", body: "เพิ่มข้อความ รูป หรือรูปทรงก่อนบันทึก" };
+    if (!all.length && !drawing) throw { title: "ยังไม่ได้เพิ่มอะไรลงในเอกสาร", body: "เพิ่มข้อความ รูป หรือรูปทรงก่อนบันทึก" };
     const thai = all.some(([, l]) => l.some((o) => o.t === "text" && needsThai(o.text)));
     const hasText = all.some(([, l]) => l.some((o) => o.t === "text"));
     const F = hasText ? await PDFX.loadFonts(out, thai) : null;

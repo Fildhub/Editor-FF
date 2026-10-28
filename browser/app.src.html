@@ -334,7 +334,7 @@ const SRC_RE = {
 };
 // Latin-script languages: a real word (3+ letters) that is not just a part code like "MH040A" or "RPM"
 const LATIN_WORD = /[A-Za-z\u00C0-\u024F\u1E00-\u1EFF]{3,}/;
-const LATIN = { test: (t) => LATIN_WORD.test(t) && (/\s/.test(t.trim()) || /[a-z\u00DF-\u024F\u1E00-\u1EFF]/.test(t)) };
+const LATIN = { test: (t) => LATIN_WORD.test(t) && (/\s/.test(t.trim()) || /[a-z\u00DF-\u024F\u1E00-\u1EFF]/.test(t) || !/\d/.test(t)) };   // words (even ALL CAPS), not codes like MH040A / DC48
 for (const k of ["en", "fr", "de", "es", "it", "pt", "id", "vi"]) SRC_RE[k] = LATIN;
 const NOSPACE = /[　-ヿ㐀-鿿가-힯＀-￯฀-๿]/;
 
@@ -368,7 +368,7 @@ function showMsg(where, kind, title, body) {
   if (!title) return;
   const d = document.createElement("div"); d.className = "msg " + kind;
   const b = document.createElement("b"); b.textContent = title;
-  const p = document.createElement("div"); p.textContent = body || "";
+  const p = document.createElement("div"); p.textContent = body || ""; p.style.whiteSpace = "pre-line";
   d.append(b, p); box.append(d);
 }
 function tick() { $("w-time").textContent = Math.round((performance.now() - S.t0) / 1000) + " วินาที"; }
@@ -401,8 +401,29 @@ function parsePages(spec, n) {
   return set.size ? set : null;
 }
 
+// what kind of characters a page holds (for explaining why nothing was found)
+const newStats = () => ({ cjk: 0, latin: 0, digit: 0, other: 0, rot: 0, skipped: 0 });
+function tally(str, st, rotated) {
+  for (const ch of str) {
+    if (/\s/.test(ch)) continue;
+    if (rotated) { st.rot++; continue; }
+    if (CJK.test(ch)) st.cjk++; else if (/[A-Za-z\u00C0-\u024F]/.test(ch)) st.latin++; else if (/[0-9]/.test(ch)) st.digit++; else st.other++;
+  }
+}
+async function scanText(bytes, maxPages = 3) {
+  const pdf = await pdfjsLib.getDocument({ data: bytes.slice(0), isEvalSupported: false, CMapReaderFactory: EmbeddedCMaps, useWorkerFetch: false }).promise;
+  const st = newStats();
+  for (let p = 1; p <= Math.min(maxPages, pdf.numPages); p++) {
+    const tc = await (await pdf.getPage(p)).getTextContent();
+    for (const it of tc.items) { if (!it.str) continue; const [a, b, c] = it.transform; tally(it.str, st, Math.abs(b) > 0.01 || Math.abs(c) > 0.01 || a <= 0); }
+  }
+  return st;
+}
+const describeStats = (st) => `ตัวอักษรที่พบในหน้าที่อ่าน: จีน ${st.cjk} · ละติน ${st.latin} · ตัวเลข ${st.digit} · อื่น ๆ ${st.other}${st.rot ? ` · ข้อความที่หมุน ${st.rot} (ข้าม)` : ""}`;
+
 async function analyse(pdf, srcRe, only, onPage, keepOther) {
-  const pages = [];
+  const pages = [], stats = newStats();
+  pages.stats = stats;
   for (let p = 1; p <= pdf.numPages; p++) {
     if (only && !only.has(p)) { pages.push({ page: null, view: null, blocks: [], chars: -1 }); continue; }
     onPage?.(p);
@@ -413,7 +434,9 @@ async function analyse(pdf, srcRe, only, onPage, keepOther) {
     for (const it of tc.items) {
       if (!it.str || !it.str.trim()) continue;
       const [a, b, c, d, e, f] = it.transform;
-      if (Math.abs(b) > 0.01 || Math.abs(c) > 0.01 || a <= 0) continue;  // rotated text is left as is
+      const rotated = Math.abs(b) > 0.01 || Math.abs(c) > 0.01 || a <= 0;
+      tally(it.str, stats, rotated);
+      if (rotated) continue;                                             // rotated text is left as is
       const size = Math.abs(d) || Math.hypot(c, d);
       if (size < 2) continue;
       const fname = await fontNameOf(page, it.fontName);
@@ -1044,8 +1067,13 @@ async function pipeline(bytes, { srcKey, tgtName, pagesSpec = "", signal, ui = {
   say.s1(`${nSel} หน้า${only ? ` (จาก ${pdf.numPages})` : ""} · พบ ${all.length.toLocaleString()} ข้อความที่ต้องแปล`);
   say.step(1, "done");
   if (!all.length) {
-    throw imageOnly ? { title: "ไม่พบตัวอักษรที่อ่านได้ในไฟล์นี้", body: "PDF นี้น่าจะเป็นภาพสแกนหรือตัวอักษรแบบเส้น ซึ่งไฟล์นี้ยังอ่านไม่ได้ — ใช้โปรแกรมเต็ม (มี OCR) แทน" }
-                    : { title: "ไม่พบข้อความภาษาต้นฉบับที่เลือก", body: "ตรวจว่าเลือกภาษาต้นฉบับถูกต้อง" };
+    const st = pages.stats, total = st.cjk + st.latin + st.digit + st.other;
+    let hint = "ตรวจว่าเลือกภาษาต้นฉบับถูกต้อง";
+    if (st.latin > 0 && st.cjk === 0 && srcKey === "zh") hint = "ในไฟล์มีแต่ตัวอักษรละติน (อังกฤษ) ไม่มีตัวจีนที่เป็นข้อความจริง — ลองเลือกต้นฉบับเป็น “อังกฤษ” (ตัวจีนในแบบอาจถูกวาดเป็นเส้น ซึ่งแปลไม่ได้ถ้าไม่มี OCR)";
+    else if (total >= 5 && st.other > 0.5 * total) hint = "ตัวอักษรส่วนใหญ่เป็นรหัสพิเศษ (ฟอนต์ในไฟล์ไม่มีตารางแปลงเป็นข้อความ) จึงอ่านภาษาไม่ออก — ต้องใช้ OCR";
+    else if (st.rot > total) hint = "ข้อความส่วนใหญ่ในหน้านี้ถูกหมุน (เช่นเกิดจากการหมุนหน้า) ซึ่งยังข้ามไป — ลองแปลไฟล์ต้นฉบับก่อนหมุน";
+    throw imageOnly && total < 5 && !st.rot ? { title: "ไม่พบตัวอักษรที่อ่านได้ในไฟล์นี้", body: "PDF นี้น่าจะเป็นภาพสแกนหรือตัวอักษรแบบเส้น ซึ่งไฟล์นี้ยังอ่านไม่ได้ — ใช้โปรแกรมเต็ม (มี OCR) แทน" }
+                    : { title: "ไม่พบข้อความภาษาต้นฉบับที่เลือก", body: `${describeStats(st)}\n${hint}` };
   }
   // 2 --------------------------------------------------------------
   say.step(2, "on");
@@ -1136,7 +1164,7 @@ $("next").addEventListener("click", () => { if (S.page < S.pages - 1) { S.page++
 // pieces the other tools share (see browser/tools/)
 window.PDFX = {
   openPdf: (bytes) => pdfjsLib.getDocument({ data: bytes.slice(0), isEvalSupported: false, CMapReaderFactory: EmbeddedCMaps, useWorkerFetch: false }).promise,
-  loadFonts, drawLine, tw, latin1, translate: pipeline,
+  loadFonts, drawLine, tw, latin1, translate: pipeline, scan: scanText, describeStats,
 };
 
 $("download").addEventListener("click", () => {

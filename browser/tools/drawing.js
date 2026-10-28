@@ -47,7 +47,16 @@ tool({
       note.textContent = isImg
         ? "ไฟล์นี้เป็นภาพ จึงแปลข้อความไม่ได้ — ติดป้าย Ref# และไฮไลต์ได้ตามปกติ ถ้าต้องการแปล ให้ใช้ไฟล์ PDF ต้นฉบับของแบบ"
         : "ตั้งค่าเริ่มต้น: แปลเฉพาะบรรทัดภาษาจีนเป็นไทย ส่วนบรรทัดภาษาอังกฤษ ตัวเลข และรหัสรุ่นคงเดิม";
-      ctx.side.append(useTr, box, note, go);
+      const found = html(`<div class="hint"></div>`);
+      ctx.side.append(useTr, found, box, note, go);
+      if (!isImg) PDFX.scan(doc.bytes).then((st) => {              // pick the source language from what the page really contains
+        found.textContent = PDFX.describeStats(st);
+        const total = st.cjk + st.latin + st.digit + st.other;
+        if (st.cjk > 0) { src.value = "zh"; }
+        else if (st.latin > 0) { src.value = "en"; }
+        else if (total < 5) found.textContent += " — แทบไม่มีข้อความจริงในไฟล์ (น่าจะเป็นภาพหรือตัวอักษรแบบเส้น) แปลไม่ได้ แต่ติดป้าย Ref# ได้";
+        syncKeep();
+      }).catch(() => {});
       if (!isImg) go.lastChild.textContent = " แปลแล้วไปติดป้าย Ref#";
 
       const pv = html(`<div class="pvwrap"><div class="pv"><canvas></canvas></div></div>`);

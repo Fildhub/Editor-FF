@@ -134,7 +134,7 @@ function openTool(def) {
       let box = stage.querySelector(":scope > .errbox");
       if (!box) { box = html(`<div class="errbox"></div>`); stage.prepend(box); }
       const m = explain(e);
-      box.innerHTML = `<div class="msg err"><b>${esc(m[0])}</b><div>${esc(m[1])}</div></div>`;
+      box.innerHTML = `<div class="msg err"><b>${esc(m[0])}</b><div style="white-space:pre-line">${esc(m[1])}</div></div>`;
       box.scrollIntoView({ block: "nearest" });
     },
     clearFail() { stage.querySelector(":scope > .errbox")?.remove(); },
