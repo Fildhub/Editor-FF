@@ -1,0 +1,9 @@
+{
+  // Cloudflare Workers (static assets): serve the single-page app in ./site
+  // Worker name must match the one in the Cloudflare dashboard (pdftoolsfild.price-viewer.workers.dev)
+  "name": "pdftoolsfild",
+  "compatibility_date": "2026-10-01",
+  "assets": {
+    "directory": "./site"
+  }
+}
