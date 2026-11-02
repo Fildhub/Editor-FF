@@ -410,12 +410,14 @@ function tally(str, st, rotated) {
     if (CJK.test(ch)) st.cjk++; else if (/[A-Za-z\u00C0-\u024F]/.test(ch)) st.latin++; else if (/[0-9]/.test(ch)) st.digit++; else st.other++;
   }
 }
+// upright on screen: transform [a b c d] (viewport, y down) has no rotation and is not mirrored
+const upright = (a, b, c, d) => Math.abs(b) <= 0.01 * Math.abs(a) && Math.abs(c) <= 0.01 * Math.abs(d) && a > 0 && d < 0;
 async function scanText(bytes, maxPages = 3) {
   const pdf = await pdfjsLib.getDocument({ data: bytes.slice(0), isEvalSupported: false, CMapReaderFactory: EmbeddedCMaps, useWorkerFetch: false }).promise;
   const st = newStats();
   for (let p = 1; p <= Math.min(maxPages, pdf.numPages); p++) {
-    const tc = await (await pdf.getPage(p)).getTextContent();
-    for (const it of tc.items) { if (!it.str) continue; const [a, b, c] = it.transform; tally(it.str, st, Math.abs(b) > 0.01 || Math.abs(c) > 0.01 || a <= 0); }
+    const page = await pdf.getPage(p), vp1 = page.getViewport({ scale: 1 }), tc = await page.getTextContent();
+    for (const it of tc.items) { if (!it.str) continue; const [a, b, c, d] = pdfjsLib.Util.transform(vp1.transform, it.transform); tally(it.str, st, !upright(a, b, c, d)); }
   }
   return st;
 }
@@ -430,22 +432,25 @@ async function analyse(pdf, srcRe, only, onPage, keepOther) {
     const page = await pdf.getPage(p);
     const tc = await page.getTextContent();
     try { await page.getOperatorList(); } catch {}
+    // Work in the page as it is shown (after /Rotate), y up from the bottom-left corner:
+    // a page that was turned with "rotate" keeps its text sideways in PDF space.
+    const vp1 = page.getViewport({ scale: 1 }), H = vp1.height;
     const items = [];
     for (const it of tc.items) {
       if (!it.str || !it.str.trim()) continue;
-      const [a, b, c, d, e, f] = it.transform;
-      const rotated = Math.abs(b) > 0.01 || Math.abs(c) > 0.01 || a <= 0;
+      const [a, b, c, d, e, f] = pdfjsLib.Util.transform(vp1.transform, it.transform);
+      const rotated = !upright(a, b, c, d);
       tally(it.str, stats, rotated);
-      if (rotated) continue;                                             // rotated text is left as is
+      if (rotated) continue;                                             // text turned on the page is left as is
       const size = Math.abs(d) || Math.hypot(c, d);
       if (size < 2) continue;
       const fname = await fontNameOf(page, it.fontName);
-      items.push({ str: it.str, x0: e, x1: e + Math.max(it.width, 0.3 * size), base: f, size,
+      items.push({ str: it.str, x0: e, x1: e + Math.max(it.width, 0.3 * size), base: H - f, size,
         bold: /bold|black|heavy|semibold|demi|[-,]b$/i.test(fname) && !/light/i.test(fname) });
     }
     const lines = groupLines(items);
     const blocks = groupBlocks(lines, keepOther ? srcRe : null);
-    pages.push({ page, view: page.view, rotate: page.rotate, blocks, chars: items.reduce((n, i) => n + i.str.length, 0) });
+    pages.push({ page, view: [0, 0, vp1.width, H], rotate: page.rotate, blocks, chars: items.reduce((n, i) => n + i.str.length, 0) });
   }
   for (const pg of pages) {
     if (!pg.page) continue;
@@ -913,8 +918,16 @@ async function typeset(pages, bytes, thai, onPage) {
     const todo = pg.blocks.filter((b) => b.translate && b.out);
     if (!todo.length) continue;
     onPage?.(i + 1);
-    const { ctx, vp } = await renderCanvas(pg.page, 2);
+    const { ctx } = await renderCanvas(pg.page, 2);
+    const H = pg.view[3], S2 = 2;                                   // canvas = page as shown, scale 2
+    const vp = {
+      scale: S2,
+      convertToViewportPoint: (x, y) => [x * S2, (H - y) * S2],
+      convertToPdfPoint: (px, py) => [px / S2, H - py / S2],
+    };
     const out = doc.getPage(i);
+    const space = shownSpace(out);
+    space.enter();
     const colors = todo.map((bl) => sampleColors(ctx, vp, bl, 1.2));
     todo.forEach((bl, k) => {
       if (bl.toc) return;
@@ -951,8 +964,16 @@ async function typeset(pages, bytes, thai, onPage) {
       }
       placed++;
     });
+    space.leave();
   }
   return { bytes: await doc.save(), small, placed };
+}
+
+// pdf-lib drawing in "page as shown" coordinates (y up, origin bottom-left after /Rotate)
+function shownSpace(page) {
+  const L = PDFLib, box = page.getCropBox(), W = box.width, H = box.height, r = ((page.getRotation().angle % 360) + 360) % 360;
+  const m = r === 90 ? [0, 1, -1, 0, box.x + W, box.y] : r === 180 ? [-1, 0, 0, -1, box.x + W, box.y + H] : r === 270 ? [0, -1, 1, 0, box.x, box.y + H] : [1, 0, 0, 1, box.x, box.y];
+  return { enter: () => page.pushOperators(L.pushGraphicsState(), L.concatTransformationMatrix(...m)), leave: () => page.pushOperators(L.popGraphicsState()) };
 }
 
 // ------------------------------------------------------------------ run
