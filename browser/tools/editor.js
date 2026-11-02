@@ -21,7 +21,7 @@ function editorTool(id, { title, desc, ic, sign }) {
 editorTool("edit", { title: "แก้ไข PDF", desc: "เพิ่มข้อความ รูป รูปทรง ไฮไลต์ วาดด้วยปากกา หรือปิดทับของเดิม", ic: "edit" });
 editorTool("sign", { title: "ลงลายเซ็น", desc: "เซ็นด้วยเมาส์/นิ้ว พิมพ์ชื่อ หรืออัปโหลดลายเซ็น แล้ววางลงบนเอกสาร", ic: "sign", sign: true });
 
-function runEditor(ctx, doc, { sign, drawing, suffix }) {
+function runEditor(ctx, doc, { sign, drawing, suffix, initial, refStart, notice }) {
   const pages = new Map();                       // page number -> [objects]
   const imgs = new Map();                        // image id -> {bytes, mime, w, h, url}
   const D = {                                    // defaults for new objects
@@ -65,6 +65,7 @@ function runEditor(ctx, doc, { sign, drawing, suffix }) {
   const props = html(`<div class="props"></div>`);
   const actions = html(`<div class="row" style="flex-wrap:wrap"></div>`);
   const save = primaryBtn("บันทึกไฟล์", "check");
+  if (notice) { const n = html(`<div class="note"></div>`); n.textContent = notice; ctx.side.append(n); }
   ctx.side.append(props, actions, save);
 
   // ---------- history
@@ -425,7 +426,12 @@ function runEditor(ctx, doc, { sign, drawing, suffix }) {
     await showResult(ctx, { title: sign ? "ลงลายเซ็นแล้ว" : drawing ? "ทำ Drawing เสร็จแล้ว" : "บันทึกการแก้ไขแล้ว", files: [{ name: `${baseName(doc.name)}${suffix || (sign ? "_เซ็น" : "_แก้ไข")}.pdf`, mime: "application/pdf", bytes: await savePdf(out) }] });
   }, "กำลังบันทึก…");
 
-  setTool(drawing ? "ref" : "select");
+  if (initial) {                                       // objects prepared by the caller (automatic Ref# tags)
+    for (const [p, list] of initial) pages.set(p, list.map((o) => ({ ...o, u: ++uid })));
+    snap = serialize();
+  }
+  if (refStart) refN = refStart;
+  setTool(drawing ? (initial && initial.size ? "select" : "ref") : "select");
   showPage(1, true).then(() => { if (sign) sigBtn.click(); });
 }
 
